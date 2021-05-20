@@ -3,6 +3,6 @@ Model for electromagnetic plane-wave propagation through a multi-layered system 
 
 ![image](githubimg.jpg)
 
-N. Rathmann et al, 2021 (in prep.)
+Rathmann et al, 2021 (in prep.)
 
 Builds on work by Yeh, 1980; Xu and others, 2000; Passler and Paarmann, 2017; Passler and others, 2020.
