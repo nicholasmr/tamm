@@ -1,5 +1,5 @@
 # Radio-wave transfer matrix model for glaciology
-Model for electromagnetic plane-wave propagation through a multi-layered system of horizontally homogeneous layers with arbritry dieletric permitivity tensors, specified using a spectral orientation fabric formalism.
+Model for electromagnetic plane-wave propagation through a multi-layered system of horizontally homogeneous layers with arbitrary dielectric permittivity tensor, specified using a spectral orientation fabric formalism.
 
 ![image](githubimg.jpg)
 
