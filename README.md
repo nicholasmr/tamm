@@ -1,4 +1,4 @@
-# Radio-wave transfer matrix model for glaciology
+# Radio-wave transfer matrix model for glacier ice
 Model of electromagnetic plane-wave propagation through vertically-layered polycrystalline ice with arbitrary dielectric permittivity tensors (arbitrary orientation fabrics).
 
 **Documentation:**<br>
