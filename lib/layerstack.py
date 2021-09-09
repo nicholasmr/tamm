@@ -4,147 +4,97 @@
 This class represents a vertical stack of horizontally (x,y) homogeneous layers of anisotropic polycrystalline ice
 """
 
-import copy, sys, code # code.interact(local=locals())
-
 import numpy as np
-import numpy.linalg as lag
-
-from scipy.optimize import minimize
 
 from layer import *
 from layer_GTM import *
 
 class LayerStack:
     
-    
-    #def __init__(self, n2m, z, alpha, beta, f=179.0e6, epsa=3.19, epsc=3.16, epsair=1.000589, sigma=1e-5, mu=1): 
-    def __init__(self, n2m, z, alpha, beta, f=179.0e6, epsa=3.17, epsc=3.17-0.034, epsair=1.000589, sigma=1e-5, mu=1): 
+    def __init__(self, nlm, z, N_frames=100, epsa=[3.17], epsc=[3.17-0.034], sigma=[1e-5], mu=1, modeltype='GTM', VERBOSE=1): 
 
-        self.VERBOSE = 1
+        self.modeltype = modeltype # GTM (General Transfer Matrix, aka. tamm) or FP (Fujita--Paren)
+        if self.modeltype not in ['GTM','FP']: print('*** ERROR: allowed "modeltype" is "GTM" or "FP"')
         
-        self.dz = np.abs(np.diff(z))
-        self.z = z
-
-        self.alpha = alpha # angle of incidence [rad]
-        self.beta  = beta # horizontal rotations [rad]
-      
-        self.N_layers,_ = n2m.shape # number of layers 
-        self.N_frames   = len(self.beta) # number of rotated frames
+        # Dimensions
+        self.N_layers,_ = nlm.shape # number of layers 
+        self.N_frames   = N_frames  # number of rotated frames
         self.layerlist  = np.arange(self.N_layers)
         self.framelist  = np.arange(self.N_frames)
-        
-        #-------------
-        
-        self.mu = mu        
-        self.f  = f
-        self.epsa   = epsa
-        self.epsc   = epsc
-        self.epsair = epsair
-        self.sigma  = sigma
+        self.beta       = np.linspace(0, np.pi, self.N_frames) # horizontal rotations [rad]
         #
-        self.epsiso = (2*self.epsa+self.epsc)/3 
-        self.zeta  = np.sqrt(self.epsiso)*np.sin(self.alpha) 
-       
-        if len(self.dz) != len(n2m): print('*** ERROR: len(z) != 1+len(n2m)')
- 
-        # For GTM code (no need to calculate thse mutiple times)
-        self.Delta1234 = np.array([[1,0,0,0],
-                                   [0,0,1,0],
-                                   [0,1,0,0],
-                                   [0,0,0,1]])
-    
-        self.Delta1234_inv = exact_inv(self.Delta1234)  
-       
+        self.z  = np.hstack(([np.abs(z[1]-z[0])],z)) # Add isotropic surface layer with thickness equal to first subsurface layer 
+        self.dz = np.abs(np.diff(self.z))
+     
+        # Input parameters
+        self.mu    = mu  
+        self.epsa  = np.full((self.N_layers), epsa[0]) if len(epsa)==1 else epsa 
+        self.epsc  = np.full((self.N_layers), epsc[0]) if len(epsc)==1 else epsc 
+        self.sigma = np.full((self.N_layers), sigma[0]) if len(sigma)==1 else sigma 
+        
         # Set up layers with prescribed fabric profile
-        self.init_with_n2m(n2m)
+        self.n2m = np.array([ nlm[nn, np.array([1,2,3,4,5])]/nlm[nn,0] for nn in np.arange(self.N_layers) ]) # normalized l=2 spectral coefs
+        self.lm  = np.array([(2,-2),(2,-1),(2,0),(2,1),(2,2)]).T
         
-
-    def init_with_n2m(self, n2m):
+        # Errors, warnings and verbosity
         
-        if self.VERBOSE: print('*** Initializing stack: frames x layers = %i x %i ...'%(self.N_frames,self.N_layers))
+        if len(self.dz) != len(self.n2m): raise ValueError('len(z) != 1+len(n2m)')
         
-        self.n2m        = n2m
-        self.frm_n2m    = [self.rotate_frame(n2m, b) for b in self.beta]         
-        self.frm_layers = [self.get_stack(self.frm_n2m[ff], self.zeta) for ff in self.framelist]
-        self.ref_layers = self.frm_layers[0] # assume the first frame is the "lab" reference frame. 
-        self.URD        = self.get_URD() # requires self.frm_layers
-
-    def update_single_layer(self, n2m, nn):
+        if np.any(nlm[0,1:]): raise ValueError('n_2^m of top layer must vanish (surface layer must be isotropic)')
         
-        self.n2m[nn,:]  = n2m
-        self.frm_n2m    = [self.rotate_frame(self.n2m, b) for b in self.beta] # easiest just to recalc. the rotation of all layers.
-        for ff in self.framelist: self.frm_layers[ff][nn] = Layer(self.frm_n2m[ff][nn], self.dz[nn], self.f, self.zeta, self.epsa, self.epsc, self.sigma, self.mu)
-        self.ref_layers = self.frm_layers[0] 
-        self.URD        = self.get_URD() # Lazy approach: just recalculate M for entire stack (not just the updated layer)
-        
-        
-    def get_stack(self, n2m, zeta):
-        
-        lstack = [Layer(n2m[nn], self.dz[nn], self.f, zeta, self.epsa, self.epsc, self.sigma, self.mu) for nn in self.layerlist]
-        
-        return lstack
-        
-    
-    def rotate_frame(self, n2m, beta):
-        
-        rotmat = np.diag([np.exp(+1j*m*beta) for m in np.arange(-2,2+1)])
-        n2m_rot = np.einsum('ij,nj->ni',rotmat,n2m)
-        return n2m_rot
+        self.VERBOSE = VERBOSE
+        if self.VERBOSE: print('Initialized "%s" stack: frames x layers = %i x %i'%(self.modeltype, self.N_frames,self.N_layers))
 
     
     def get_eigenframe(self):
         
-        # Get eigen values and vectors for the reference stack/frame (assume the first frame is the lab frame, but dosn't matter for the eigenvalues).
+        # Get eigen values and vectors for the reference stack/frame (assume the first frame is the lab frame, but of course does not matter for the eigenvalues).
         
         shp = (self.N_layers,3)
         e1, e2, e3 = np.zeros(shp), np.zeros(shp), np.zeros(shp)
-        eigvals = np.zeros(shp)
+        eigvals    = np.zeros(shp)
+        a2         = np.zeros((self.N_layers,3,3))
+
+        generic_layer = Layer([0,0,0,0,0], 0, 1, 1e3, 0, 1, 1, 0, 1) # pseudo layer to use the get_eigframe() method of the layer class
         
         for nn in self.layerlist:
-            l = self.ref_layers[nn] 
-            (eigvals[nn,:], e1[nn,:], e2[nn,:], e3[nn,:]) = l.get_eigframe()
+            generic_layer.set_fabric(self.n2m[nn,:], 0)
+            (eigvals[nn,:], e1[nn,:], e2[nn,:], e3[nn,:]) = generic_layer.get_eigframe()
+            a2[nn,:,:] = generic_layer.ccavg # a^(2) = <c^2>
 
-        return eigvals, e1,e2,e3
+        return eigvals, e1,e2,e3, a2
     
     
-    def get_URD(self):
+    def get_stack(self, beta, f, zeta):
 
-        D = np.zeros((self.N_frames,self.N_layers, 2,2), dtype=np.complex) # Downard (fwd) propagation
-        U = np.zeros((self.N_frames,self.N_layers, 2,2), dtype=np.complex) # Upward (rev) propagation
-        D[:,0,:,:] = np.eye(2) # identity for surface layer (zero propagation path)
-        U[:,0,:,:] = np.eye(2) # identity for surface layer (zero propagation path)
-        
-        laylist = self.layerlist[:-1] # Reduced layer list: can not calculate reflection from last layer since the interface matrix depends on the perm/fabric of the next (unspecified) layer
+        lstack = [Layer(self.n2m[nn], beta, self.dz[nn], f, zeta, self.epsa[nn], self.epsc[nn], self.sigma[nn], self.mu, modeltype=self.modeltype) for nn in self.layerlist]
+        return lstack
 
-        Mfwd_next = np.array([ [self.frm_layers[ff][nn+1].Mfwd for nn in laylist] for ff in self.framelist], dtype=np.complex)        
-        Mrev_next = np.array([ [self.frm_layers[ff][nn+1].Mrev for nn in laylist] for ff in self.framelist], dtype=np.complex)
-        
-        A         = np.array([ [self.frm_layers[ff][nn  ].Ai     for nn in laylist] for ff in self.framelist], dtype=np.complex)
-        A_inv     = np.array([ [self.frm_layers[ff][nn  ].Ai_inv for nn in laylist] for ff in self.framelist], dtype=np.complex)
-        Anext     = np.array([ [self.frm_layers[ff][nn+1].Ai     for nn in laylist] for ff in self.framelist], dtype=np.complex)
-        Anext_inv = np.array([ [self.frm_layers[ff][nn+1].Ai_inv for nn in laylist] for ff in self.framelist], dtype=np.complex)
-        
-        R, T, Trev = self.get_T_R(A,A_inv, Anext,Anext_inv)
-        
-        D_mul = np.einsum('fnij,fnjk->fnik', Mfwd_next, T)
-        U_mul = np.einsum('fnij,fnjk->fnik', Trev, Mrev_next)
-        
-        for nn in self.layerlist[:-1]:
-            D[:,nn+1,:,:] = np.einsum('fij,fjk->fik', D_mul[:,nn,:,:],     D[:,nn,:,:]) # F_{n}*E_{0}^{-,Tx} = E_{n}^{-,downward}
-            U[:,nn+1,:,:] = np.einsum('fij,fjk->fik',     U[:,nn,:,:], U_mul[:,nn,:,:]) # B_{n}*E_{n}^{-,upward} = E_{0,Rx}^{-}
 
-        # Total downwards-reflected-upwards transformation (self.N_frames,self.N_layers-1, 2,2)
-        URD = np.einsum('fnij,fnjk->fnik',U[:,:-1,:,:],np.einsum('fnij,fnjk->fnik',R,D[:,:-1,:,:])) 
-        
-        return URD
+    def get_propconst(self):
     
+        ks = np.array([self.frm_layers[0][nn].ks[:] for nn in self.layerlist[:]], dtype=np.complex128) # dimensionless propagation constants: k_s = omega/c q_s
+        return ks
+   
     
+    #####
+    # SYSTEM MATRICES
+    #####
+    
+
     def get_T_R(self, Aprev,Aprev_inv, Anext,Anext_inv):
         
-        ### Downward propergating wave (GTM code)
+        ### Downward propergating wave (original GTM code)
+       
+        Delta1234 = np.array([[1,0,0,0],
+                              [0,0,1,0],
+                              [0,1,0,0],
+                              [0,0,0,1]])
+    
+        Delta1234_inv = exact_inv(Delta1234)  
         
         Gamma     = np.einsum('fnij,fnjk->fnik', Aprev_inv, Anext) 
-        GammaStar = np.einsum('ij,fnjk,kl->fnil', self.Delta1234_inv, Gamma, self.Delta1234) 
+        GammaStar = np.einsum('ij,fnjk,kl->fnil', Delta1234_inv, Gamma, Delta1234) 
         
         # Common denominator for all coefficients
         Denom = np.multiply(GammaStar[:,:,0,0],GammaStar[:,:,2,2]) - np.multiply(GammaStar[:,:,0,2],GammaStar[:,:,2,0])
@@ -160,7 +110,7 @@ class LayerStack:
         rps = np.nan_to_num(np.divide(rps,Denom))        
         rsp = np.nan_to_num(np.divide(rsp,Denom))
         
-        R = np.array([[rpp,rsp], [rps,rss]], dtype=np.complex) 
+        R = np.array([[rpp,rsp], [rps,rss]], dtype=np.complex128) 
 
         # Transmission coefficients
         tpp = np.nan_to_num(+np.divide(GammaStar[:,:,2,2],Denom))
@@ -168,7 +118,7 @@ class LayerStack:
         tps = np.nan_to_num(-np.divide(GammaStar[:,:,2,0],Denom))
         tsp = np.nan_to_num(-np.divide(GammaStar[:,:,0,2],Denom))
 
-        T = np.array([[tpp, tsp], [tps, tss]], dtype=np.complex)
+        T = np.array([[tpp, tsp], [tps, tss]], dtype=np.complex128)
         
         ### Upward propergating wave
         
@@ -183,29 +133,98 @@ class LayerStack:
         tps_rev = np.nan_to_num(-np.divide(Gamma_rev[:,:,3,2],Denom_rev))
         tsp_rev = np.nan_to_num(-np.divide(Gamma_rev[:,:,2,3],Denom_rev))
 
-        Trev = np.array([[tpp_rev, tsp_rev], [tps_rev, tss_rev]], dtype=np.complex)
+        Trev = np.array([[tpp_rev, tsp_rev], [tps_rev, tss_rev]], dtype=np.complex128)
         
         # Return re-ordered tensors for convention used in code (frame,layer, ...)
         return np.einsum('ijfn->fnij',R), np.einsum('ijfn->fnij',T), np.einsum('ijfn->fnij',Trev)
 
+        
+    def get_URD(self, frm_layers):
+
+        D = np.zeros((self.N_frames,self.N_layers, 2,2), dtype=np.complex128) # Downward (fwd) propagation
+        U = np.zeros((self.N_frames,self.N_layers, 2,2), dtype=np.complex128) # Upward (rev) propagation
+        D[:,0,:,:] = np.eye(2) # identity for surface layer (zero propagation path)
+        U[:,0,:,:] = np.eye(2) # identity for surface layer (zero propagation path)
+        
+        laylist = self.layerlist[:-1] # Reduced layer list: can not calculate reflection from last layer since the interface matrix depends on the perm/fabric of the next (unspecified) layer
+
+        Mfwd_next = np.array([ [frm_layers[ff][nn+1].Mfwd for nn in laylist] for ff in self.framelist], dtype=np.complex128)        
+        Mrev_next = np.array([ [frm_layers[ff][nn+1].Mrev for nn in laylist] for ff in self.framelist], dtype=np.complex128)
+
+        if self.modeltype == 'GTM':
+            
+            A         = np.array([ [frm_layers[ff][nn  ].Ai     for nn in laylist] for ff in self.framelist], dtype=np.complex128)
+            A_inv     = np.array([ [frm_layers[ff][nn  ].Ai_inv for nn in laylist] for ff in self.framelist], dtype=np.complex128)
+            Anext     = np.array([ [frm_layers[ff][nn+1].Ai     for nn in laylist] for ff in self.framelist], dtype=np.complex128)
+            Anext_inv = np.array([ [frm_layers[ff][nn+1].Ai_inv for nn in laylist] for ff in self.framelist], dtype=np.complex128)
+            
+            R, T, Trev = self.get_T_R(A,A_inv, Anext,Anext_inv)
+            
+        if self.modeltype == 'FP':
+    
+            R    = np.zeros((self.N_frames,len(laylist), 2,2), dtype=np.complex128)
+            T    = np.zeros((self.N_frames,len(laylist), 2,2), dtype=np.complex128)
+            Trev = np.zeros((self.N_frames,len(laylist), 2,2), dtype=np.complex128)
+            
+            # Transmission matrices = identity matrices
+            T[:,:,0,0] = 1
+            T[:,:,1,1] = 1
+            Trev = T.copy()
+            
+            # Reflection matrices are based on Paren (1981) scattering
+            ff = 0 # any beta frame will do (eigenvalues are not changed by rotation the frame of reference)
+            R0flat = np.array([[ (frm_layers[ff][nn].ai_horiz[ii] - frm_layers[ff][nn+1].ai_horiz[ii])*(self.epsc[nn]-self.epsa[nn]) for ii in (0,1)] for nn in laylist], dtype=np.complex128)
+            #R0flat *= 1/0.03404121647756628 # tamm cal.
+            # ...reshape
+            R0 = np.zeros((len(laylist), 2,2), dtype=np.complex128)
+            R0[:,0,0] = +R0flat[:,0]
+            R0[:,1,1] = +R0flat[:,1]
+            # ...construct reflection matrices for each frame by a simple rotation around the z-axis or the reference frame
+            for ff,b in enumerate(self.beta):
+                for nn in self.layerlist[:-1]:
+                    R[ff,nn,:,:] = frm_layers[ff][nn+1].eig_to_meas_frame(R0[nn,:,:])
+        
+        #-------------------
+        
+        D_mul = np.einsum('fnij,fnjk->fnik', Mfwd_next, T)
+        U_mul = np.einsum('fnij,fnjk->fnik', Trev, Mrev_next)
+        
+        for nn in self.layerlist[:-1]:
+            D[:,nn+1,:,:] = np.einsum('fij,fjk->fik', D_mul[:,nn,:,:],     D[:,nn,:,:]) # D_{n}*E_{0}^{-,Tx} = E_{n}^{-,downward}
+            U[:,nn+1,:,:] = np.einsum('fij,fjk->fik',     U[:,nn,:,:], U_mul[:,nn,:,:]) # U_{n}*E_{n}^{-,upward} = E_{0,Rx}^{-}
+
+        # Total downwards-reflected-upwards transformation (self.N_frames,self.N_layers-1, 2,2)
+        URD = np.einsum('fnij,fnjk->fnik',U[:,:-1,:,:],np.einsum('fnij,fnjk->fnik',R,D[:,:-1,:,:])) 
+        
+        return URD
+    
 
     #####
     # RADAR RETURNS
     #####
     
-    def dB(self, amp): return 20 * np.log10(amp) 
     
-    def get_returns(self, E0, Tx_pol=([1,0],), nn=None):
-    #def get_returns(self, E0, Tx_pol=([1,0],[0,1]), nn=None):
+    def dB(self, amp): return 20 * np.log10(amp) 
+
+   
+    def get_returns(self, E0, f=179.0e6, alpha=0, nn=None, plot=False):
+    
+        # Construct URD matrix for total two-way propagation
+        self.epsiso = (2*self.epsa[0]+self.epsc[0])/3 # isotropic permitivity of surface (top) layer
+        zeta  = np.sqrt(self.epsiso)*np.sin(alpha) # Dimensionless x-component of incident wave vector
+        frm_layers = [self.get_stack(b, f, zeta) for b in self.beta]
         
+        URD = self.get_URD(frm_layers) 
+    
         # Tx_pol:  polarization of transmitted wave H (x dir), V (y dir)
-        E_Tx = np.array([np.array([E0*p[0], E0*p[1]], dtype=np.complex) for p in Tx_pol]) # Init downard propergating wave in layer 0
-        E_Rx = self.get_Rx_all(E_Tx, nn=nn) # (frame,layer, Tx/Rx pair)
+        Tx_pol = ([1,0],)
+        E_Tx = np.array([np.array([E0*p[0], E0*p[1]], dtype=np.complex128) for p in Tx_pol]) # Init downard propergating wave in layer 0
+        E_Rx = self.get_Rx_all(E_Tx, URD, nn=nn) # (frame, layer, Tx/Rx pair)
         
-        E_HH = E_Rx[:,:,0] # H trans, H recv
-        E_HV = E_Rx[:,:,1] # H trans, V recv       
-        #E_VH = E_Rx[:,:,2] # V trans, H recv
-        #E_VV = E_Rx[:,:,3] # V trans, V recv         
+        E_HH = E_Rx[:,:,0] # Tx,Rx = H,H
+        E_HV = E_Rx[:,:,1] # Tx,Rx = H,V
+        #E_VH = E_Rx[:,:,2] # Tx,Rx = V,H
+        #E_VV = E_Rx[:,:,3] # Tx,Rx = V,V         
         
         E_HH_abs = np.abs(E_HH)
         E_HV_abs = np.abs(E_HV)
@@ -219,147 +238,157 @@ class LayerStack:
         Pm_HV = self.dB(E_HV_abs.mean(axis=0, keepdims=True))
         dP_HV = P_HV - Pm_HV
 
-        h,v = 0,1 # p,s comp        
-        numer = np.multiply(self.URD[:,:,h,h], np.conjugate(self.URD[:,:,v,v]))
-        denom = np.multiply(np.abs(self.URD[:,:,h,h]), np.abs(self.URD[:,:,v,v]))
+        h,v = 0,1 # p (H), s (V) components
+        I = self.layerlist[:-1] if nn==None else np.array([nn]) # Consider only the requested layer (nn) ?
+        numer = np.multiply(       URD[:,I,h,h],  np.conjugate(URD[:,I,v,v]))
+        denom = np.multiply(np.abs(URD[:,I,h,h]),       np.abs(URD[:,I,v,v]))
         c_HHVV = np.divide(numer, denom)
-        c_HHVV *= np.exp(1j*np.pi) # phase offset: c_HHVV is defined only up to an arbitrary phase shift (Jordan et al., 2019)
         
-        return (np.squeeze(Pm_HH),np.squeeze(Pm_HV), \
+        # phase offset: c_HHVV is defined only up to an arbitrary phase shift <=> exp[i*(phi1+const.)]*exp[-i*(phi2+const.)] = exp[i*(phi1-phi2)]
+        if self.modeltype=='GTM':
+            c_HHVV *= np.exp(1j*np.pi) 
+        
+        returns = (np.squeeze(Pm_HH),np.squeeze(Pm_HV), 
                 np.squeeze(dP_HH.T),np.squeeze(dP_HV.T), \
                 np.squeeze(c_HHVV.T), \
                 np.squeeze(E_HH.T),np.squeeze(E_HV.T))
 
+        if plot: self.plot(returns)
+        
+        # Save for later use (e.g. diagnostics)
+        self.frm_layers = frm_layers 
+        
+        return returns
 
-    def get_Rx_all(self, E_Tx_list, nn=None):
+
+    def get_Rx_all(self, E_Tx_list, URD, nn=None):
 
         Nl = self.N_layers-1 if nn is None else 1
-        E_Rx = np.zeros((self.N_frames, Nl, 2*len(E_Tx_list)), np.complex) 
+        E_Rx = np.zeros((self.N_frames, Nl, 2*len(E_Tx_list)), np.complex128) 
 
         for jj, E_Tx in enumerate(E_Tx_list): # Transmitted polarization
             I = [0+2*jj, 1+2*jj]        
-            if nn is None: E_Rx[:,:,I] = np.einsum('fnij,j->fni', self.URD[:,:,:,:], E_Tx) 
-            else:          E_Rx[:,0,I] = np.einsum('fij,j->fi',   self.URD[:,nn,:,:], E_Tx) 
+            if nn is None: E_Rx[:,:,I] = np.einsum('fnij,j->fni', URD[:,:,:,:],  E_Tx) 
+            else:          E_Rx[:,0,I] = np.einsum('fij,j->fi',   URD[:,nn,:,:], E_Tx) 
         
         return E_Rx
-
+    
 
     #####
-    # INVERSION
-    #####
-
-
-    def infer_n2m(self, E0, observed, symtype=1, method='BFGS',tol=1e-4):
-
-        if symtype == 0: # no symmetries
-            guessvec_nn = np.zeros((5), dtype=np.float) 
-        
-        if symtype == 1: # diagonal <c^2> 
-            guessvec_nn = np.zeros((2), dtype=np.float) 
-        
-        n2m_infr = np.zeros((self.N_layers, 5), dtype=np.complex) 
-        Pm_HH,Pm_HV, dP_HH,dP_HV, c_HHVV, E_HH,E_HV = observed  
-        
-        for nn in self.layerlist[1:]: # Assume first layer is known = isotropic
-            if self.VERBOSE: print('*** Inferring n2m of layer %i of %i using %s with tol=%.1e ...' % (nn, self.N_layers ,method, tol))
-            mm = nn-1
-            observed_mm = (Pm_HH[mm],Pm_HV[mm], dP_HH[mm,:],dP_HV[mm,:], c_HHVV[mm,:], E_HH[mm,:],E_HV[mm,:])
-            result = minimize(self.J, guessvec_nn, (nn, n2m_infr, E0, observed_mm, symtype), method=method, tol=tol, options={'disp':0}) # BFGS
-            n2m_infr_nn = self.guessvector_to_n2m(result.x, symtype=symtype)
-            n2m_infr[nn,:] = n2m_infr_nn
-            self.update_single_layer(n2m_infr_nn, nn)
-        
-        #self.init_with_n2m(n2m_infr)
-        
-        return n2m_infr
+    # PLOT
+    #####    
     
+    def plot(self, returns):
+        
+        import matplotlib.pyplot as plt
+        from matplotlib import rcParams, rc
+        from matplotlib.offsetbox import AnchoredText
+        import matplotlib.gridspec as gridspec
+        from mpl_toolkits.axes_grid1 import make_axes_locatable
+        
+        FS = 12
+        rc('font',**{'family':'serif','sans-serif':['Times'],'size':FS})
+        rc('text', usetex=True)
+        rcParams['text.latex.preamble'] = r'\usepackage{amsmath} \usepackage{amssymb} \usepackage{physics} \usepackage{txfonts} \usepackage{siunitx}'
+
+        Pm_HH,Pm_HV, dP_HH,dP_HV, c_HHVV, E_HH,E_HV = returns
+        zkm = 1e-3 * self.z
+        
+        #--------------------
+        # Plot
+        #--------------------
+            
+        def writeSubplotLabel(ax,loc,txt,frameon=True, alpha=1.0, fontsize=FS, pad=0.15, ma='none', bbox=None):
+            at = AnchoredText(txt, loc=loc, prop=dict(size=fontsize), frameon=frameon, bbox_to_anchor=bbox, bbox_transform=ax.transAxes)
+            at.patch.set_linewidth(0.7)
+            ax.add_artist(at)
+        
+        def plotRxMaps(ax, Rx, vmin=None, vmax=None, cmap='RdBu_r'):
+            
+            extent = [0,180,zkm[-1],0]
+            h = ax.imshow(Rx, vmin=vmin, vmax=vmax, cmap=cmap, extent=extent)
+            ax.set_xlabel(r'$\beta$ ($\SI{}{\degree}$)')
+            ax.set_aspect(aspect="auto")
+            ticks = [0,45,90,90+45,180]
+            ax.set_xticks(ticks[::2])
+            ax.set_xticks(ticks, minor=True)
+            return h
+        
+        def setupAxis(ax, daam, xminmax, xlbl, splbl, spframe=1, frcxlims=0):
     
-    def J(self, guessvec_nn, nn, n2m_infr, E0, observed_mm, symtype):
+            xlim = ax.get_xlim()
+            da, daminor = daam
+            xmin,xmax = xminmax
+            ax.set_xticks(np.arange(xmin,xmax+da,da))
+            ax.set_xticks(np.arange(xmin,xmax+da,daminor), minor=True)
+            ax.set_xlim(xlim if not frcxlims else xminmax)
+            ax.set_xlabel(xlbl)
+            writeSubplotLabel(ax, 2, splbl, frameon=spframe, alpha=1.0, fontsize=FS, pad=0.0)
+    
+        def setcb(ax, h, ticks=[], xlbl='', phantom=False):
+            
+            divider = make_axes_locatable(ax)
+            cax = divider.append_axes("bottom", size="3.5%", pad=0.6)
+            if not phantom:
+                hcb = plt.colorbar(h, cax=cax, extend='both', ticks=ticks[::2], **cbkwargs) 
+                hcb.ax.xaxis.set_ticks(ticks, minor=True)
+                hcb.ax.set_xlabel(xlbl, labelpad=0)
+            else:
+                cax.set_axis_off()
+    
+        #--------------------    
+    
+        scale = 0.3
+        fig = plt.figure(figsize=(20*scale,15*scale))
 
-        mm = nn-1 # with fabric guess for layer "nn", we can estimate the return for layer "mm" (the layer above) since the interface matrix "L" can be calculated.
-        Pm_HH,Pm_HV, dP_HH,dP_HV, c_HHVV, E_HH,E_HV = observed_mm # unpack
+        gs = gridspec.GridSpec(1, 4)
+        gs.update(top=0.965, bottom=0.11, left=-0.02, right=1-0.02, wspace=0.17, hspace=0.95)
+        ax_Pm     = fig.add_subplot(gs[0, 0])
+        ax_dP_HH  = fig.add_subplot(gs[0, 1], sharey=ax_Pm)
+        ax_dP_HV  = fig.add_subplot(gs[0, 2], sharey=ax_Pm)
+        ax_c_HHVV = fig.add_subplot(gs[0, 3], sharey=ax_Pm)
         
-        n2m_infr_nn = self.guessvector_to_n2m(guessvec_nn, symtype=symtype)
-        n2m_infr[nn,:] = n2m_infr_nn
-        self.update_single_layer(n2m_infr_nn, nn)
-        Pm_HH_guess,Pm_HV_guess, dP_HH_guess,dP_HV_guess, c_HHVV_guess, E_HH_guess,E_HV_guess = self.get_returns(E0, nn=mm)
+        lw = 1.6
+        legkwargs = {'frameon':True, 'fancybox':False, 'edgecolor':'k', 'framealpha':0.9, 'ncol':1, 'handlelength':1.34, 'labelspacing':0.3}
+        cbkwargs  = {'orientation':'horizontal', 'fraction':1.3, 'aspect':10}
+        
+        #--------------------
+    
+        ax_Pm.plot(Pm_HH, zkm[1:-1],'-k',  lw=lw, label=r'$\overline{P}_{\mathrm{HH}}$')
+        ax_Pm.plot(Pm_HV, zkm[1:-1],'--k', lw=lw, label=r'$\overline{P}_{\mathrm{HV}}$')
+        hleg = ax_Pm.legend(loc=2,  **legkwargs)
+        hleg.get_frame().set_linewidth(0.7);        
+        setupAxis(ax_Pm, (20, 10), (-150,10), r'$\overline{P}$ (dB)', '', spframe=0)
+        #
+        da, daminor = -0.5, -0.1
+        ax_Pm.set_yticks(np.arange(zkm[1],zkm[-1]*1.1,da))
+        ax_Pm.set_yticks(np.arange(zkm[1],zkm[-1]*1.1,daminor), minor=True)
+        ax_Pm.set_ylabel(r'z ($\SI{}{\kilo\metre}$)')
+        #
+        setcb(ax_Pm, 0, phantom=True)
+        
+        #--------------------
        
-        ####
+        vmin=-10; vmax=-vmin
+        ticks = [-10,-5,0,5,10]
+        h_HH = plotRxMaps(ax_dP_HH, dP_HH, vmin=vmin,vmax=vmax)
+        h_HV = plotRxMaps(ax_dP_HV, dP_HV, vmin=vmin,vmax=vmax)
+        plt.setp(ax_dP_HH.get_yticklabels(), visible=False)
+        plt.setp(ax_dP_HV.get_yticklabels(), visible=False)
+        writeSubplotLabel(ax_dP_HH,2,'$\delta P_{\mathrm{HH}}$',frameon=1, alpha=1.0, fontsize=FS, pad=0.0)
+        writeSubplotLabel(ax_dP_HV,2,'$\delta P_{\mathrm{HV}}$',frameon=1, alpha=1.0, fontsize=FS, pad=0.0)
+        setcb(ax_dP_HH, h_HH, ticks=ticks, xlbl=r'$\delta P_{\mathrm{HH}}$ (dB)')
+        setcb(ax_dP_HV, h_HV, ticks=ticks, xlbl=r'$\delta P_{\mathrm{HV}}$ (dB)')
         
-        # Full electric field anomaly (for debugging)
-        J_dE = 0
-        if 0:
-            dE_HH = E_HH - E_HH_guess
-            dE_HV = E_HV - E_HV_guess
-            J_dE += np.dot(dE_HH, np.conj(dE_HH))*self.dz[0] 
-            J_dE += np.dot(dE_HV, np.conj(dE_HV))*self.dz[0] 
+        #--------------------
+    
+        vmin=-180; vmax=-vmin
+        ticks = [-180,-90,0,90,180]
+        h = plotRxMaps(ax_c_HHVV, np.angle(c_HHVV, deg=True), vmin=vmin,vmax=vmax, cmap='twilight_shifted')
+        plt.setp(ax_c_HHVV.get_yticklabels(), visible=False)
+        writeSubplotLabel(ax_c_HHVV,2,r'$\varphi_{\mathrm{HV}}$',frameon=1, alpha=1.0, fontsize=FS, pad=0.0)
+        setcb(ax_c_HHVV, h, ticks=ticks, xlbl=r'$\varphi_{\mathrm{HV}}$ (\SI{}{\degree})')
 
-        # Power anomaly
-        J_dP = 0
-        if 1:
-            dP_HH_err = np.exp(dP_HH) - np.exp(np.nan_to_num(dP_HH_guess))
-            dP_HV_err = np.exp(dP_HV) - np.exp(np.nan_to_num(dP_HV_guess))
-            J_dP += np.dot(dP_HH_err, dP_HH_err)
-            J_dP += np.dot(dP_HV_err, dP_HV_err)
-                    
-        # Covariance phase
-        J_phi = 0
-        if 0:
-            gam_phi = 1e+0
-            #gam_phi = 1e-10
-            dphi = np.angle(c_HHVV) - np.angle(np.nan_to_num(c_HHVV_guess))
-            J_phi += gam_phi * np.dot(dphi, dphi)*self.dz[0] 
-            
-        # Minimal power
-        J_Pm = 0
-        if 1:
-            gam_Pm = 1e8 #if nn < 3 else 1e5
-            #J_Pm += gam_Pm * np.power( np.exp(np.nan_to_num(Pm_HH_guess)), 2)
-            #J_Pm += gam_Pm * np.power( np.exp(np.nan_to_num(Pm_HV_guess)), 2)
-            J_Pm += gam_Pm * np.exp(np.nan_to_num(Pm_HH_guess))
-            J_Pm += gam_Pm * np.exp(np.nan_to_num(Pm_HV_guess))
-            
-            #gam_n20 = 1e10
-            #print('----',np.abs(n2m_infr_nn[2]))
-            #ll = gam_n20 * np.exp(1/(1e-1+np.abs(n2m_infr_nn[2]))) #1/(1e-3+np.abs(n2m_infr_nn[2]))
-            #print(ll)
-            #J_Pm +=  ll
-            
-            
-        # Regularization (laplacian)
-        J_reg_tikh = 0
-        if 0:
-            gam_tikh = 1e-5
-            J_reg_tikh = gam_tikh * np.dot(n2m_infr_nn,np.conj(n2m_infr_nn)) 
-       
-         # Regularization (laplacian)
-        J_reg_lapl = 0
-        if 0:
-            gam_lapl = 1e-4
-            lapl_nn = 0 if nn < 2 else (n2m_infr[nn,:] - 2*n2m_infr[nn-1,:] + n2m_infr[nn-2,:])/self.dz[0]**2 # laplacian
-            J_reg_lapl = gam_lapl * np.dot(lapl_nn, np.conj(lapl_nn))*self.dz[0]
-        
-        # Total
-        J_reg = J_reg_tikh + J_reg_lapl
-        J = J_dE + J_dP + J_phi + J_Pm + J_reg
+        #--------------------
 
-#        print('(J, J_dE, J_dP, J_phi, J_reg) = (%.2e, %.2e, %.2e, %.2e, %.2e)'%(J, J_dE, J_dP, J_phi, J_reg))
-       
-        
-        return J
-
-    def guessvector_to_n2m(self, guessvec, symtype=0):
-        
-        if symtype == 0:
-            n22m = guessvec[0] + 1j*guessvec[1]
-            n21m = guessvec[2] + 1j*guessvec[3]
-            n20  = guessvec[4]
-        
-        if symtype == 1:
-            n22m = guessvec[0] + 0j
-            n21m = 0 + 0j
-            n20  = guessvec[1]
-        
-        n2m = np.array([n22m, n21m, n20, -np.conjugate(n21m), np.conjugate(n22m)], dtype=np.complex)
-
-        return n2m 
+        plt.show()
