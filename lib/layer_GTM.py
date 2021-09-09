@@ -12,7 +12,8 @@ import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning) 
 
 c_const = 299792458 # m/s
-eps0    = 8.854e-12 ## vacuum permittivity
+eps0    = 8.8541878128e-12 ## vacuum permittivity
+mu0     = 1.25663706212e-6 ## vaccum permeability
 qsd_thr = 1e-10 ### threshold for wavevector comparison
     
     
