@@ -3,11 +3,10 @@
 
 import numpy as np
 import copy, sys, os, code # code.interact(local=locals())
-sys.path.insert(0, 'lib')
+sys.path.insert(0, '../../lib')
 
 from fabrictools import *
 import scipy.special as sp
-
 
 import matplotlib.pyplot as plt
 import matplotlib as mpl
@@ -20,15 +19,17 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 import cartopy.crs as ccrs
 import seaborn as sns
 
+#--------------------
+
 FS = 13
 rc('font',**{'family':'serif','sans-serif':['Times'],'size':FS})
 rc('text', usetex=True)
 rcParams['text.latex.preamble'] = r'\usepackage{amsmath} \usepackage{amssymb} \usepackage{physics} \usepackage{txfonts} \usepackage{siunitx}'
 
+#--------------------
 
 def plot_Ylm(F,lon,lat, ax=None, tlbl='', lbl='', cmap='PuOr_r'):
     
-
     lvlmax = 0.7
     lvls = np.linspace(-lvlmax,lvlmax,9) # Contour lvls
     Fplot = F
@@ -63,9 +64,7 @@ legkwargs = {'frameon':True, 'fancybox':False, 'edgecolor':'k', 'framealpha':0.9
 cbkwargs  = {'orientation':'horizontal', 'fraction':1.3, 'aspect':10}
 
 inclination = 45 # view angle
-#inclination = 0 # view angle
 rot0 = 1 * -90
-#rot = 1*-15 + rot0 #*1.4 # view angle
 rot = 1*-40 + rot0 #*1.4 # view angle
 
 prj = ccrs.Orthographic(rot, 90-inclination)
@@ -81,33 +80,20 @@ gs.update(top=0.85, bottom=0.275, left=0.000, right=1-0.005, wspace=0.15)
 
 
 ax_ODF = fig.add_subplot(gs[0, 0], projection=prj)
-#ii=2
-#ax_Y00 = fig.add_subplot(gs[0, ii+0], projection=prj)
 ii=1
 ax_Y20 = fig.add_subplot(gs[0, ii+1], projection=prj)
 ax_Y21 = fig.add_subplot(gs[0, ii+2], projection=prj)
 ax_Y22 = fig.add_subplot(gs[0, ii+3], projection=prj)
 
 
-#ax_list = [ax_Y00, ax_Y20, ax_Y21, ax_Y22]
 ax_list = [ax_Y20, ax_Y21, ax_Y22]
 
 #--------------------
 
-#lvls = np.linspace(0.1,0.6,6)
-#nlm = 0.7*np.array([1,0.5,-0.325, 0,0,0])
 lvls = np.linspace(0.0,0.25,6)
 nlm = 1/np.sqrt(4*np.pi)*np.array([1,0.5,-0.325, 0,0,0])
 plot_ODF(nlm, np.array([[0,2,2],[0,0,-2]]),  ax=ax_ODF, cblbl=r'$\psi/N$', lvls=lvls, tickintvl=2)
-#plot_ODF(0.65*np.array([1,0.5,-0.25, 0,0,0]), np.array([[0,2,2],[0,0,-2]]), ax=ax_ODF, cblbl=r'$\psi/N$',tickintvl=2)
 ax_ODF.set_title('ODF', pad=8, fontsize=FS)
-
-#ax = ax_ODF
-#ax.plot([0],[90],'k.', transform=geo)
-#ax.text(rot0-80, 70, r'$\vu{z}$', horizontalalignment='left', transform=geo)
-#ax.plot([rot0],[0],'k.', markersize=5, transform=geo)
-#dlbl = 11
-#ax.text(rot0 - dlbl-5, -8, r'$\vu{y}$', horizontalalignment='left', transform=geo)
 
 mrk='k.'
 ms=8
@@ -124,12 +110,7 @@ ax.plot([rot0-90],[0], mrk, markersize=ms, color=mc, transform=geo)
 ax.text(rot0-90 -8, 8, r'$\vu{x}$', color=mc, horizontalalignment='left', transform=geo)
 
 
-###
-
-#(F,lon,lat) = discretize_fabric([1], np.array([[0,],[0,]]))
-#F[-39:-1,0] +=1e-1
-#print(F)
-#plot_Ylm(F,lon,lat, ax=ax_Y00, tlbl='$\psi_0^{0}=1$', lbl='$Y_{0}^{0}$')
+#--------------------
 
 (F,lon,lat) = discretize_fabric([1], np.array([[2,],[0,]]))
 plot_Ylm(F,lon,lat, ax=ax_Y20, tlbl='$\hat{\psi}_2^{0}=1$', lbl='$Y_{2}^{0}$')
@@ -150,10 +131,10 @@ plot_Ylm(F,lon,lat, ax=ax_Y22, tlbl='$\hat{\psi}_2^{2}=1$', lbl=r'$\big(\hat{\ps
 for ax in ax_list:
     ax.set_global()
 
-#-----------
-#
+#--------------------
+
 fout = 'seriesexpansion.pdf'
 print('Saving %s'%(fout))
 plt.savefig(fout,dpi=200)
 os.system('pdfcrop seriesexpansion.pdf seriesexpansion.pdf')
-# 
+
