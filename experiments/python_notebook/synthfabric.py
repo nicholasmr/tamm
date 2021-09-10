@@ -3,8 +3,11 @@
 
 import copy, sys, code # code.interact(local=locals())
 import numpy as np
+
 from scipy import interpolate
 import scipy.special as sp
+
+sys.path.insert(0, '../../lib')
 
 from specfabpy import specfabpy as sf # requires the spectral fabric module to be compiled!
 
@@ -253,15 +256,15 @@ class SyntheticFabric():
             W_ = g*W[0,:,:] + (1-g)*W[1,:,:]
             
             # Regularization
-            dndt = sf.get_nu_eps(self.nu0, D_) * sf.get_dndt_ij_reg(self.nlm_len) 
+            dndt = sf.nu(self.nu0, D_) * sf.dndt_reg(nlm_list[tt-1,:]) 
            
             # Lattice rotation
-            dndt += sf.get_dndt_ij_latrot(self.nlm_len, D_,W_, 0*D_,0,1,1,1) 
+            dndt += sf.dndt_latrot(nlm_list[tt-1,:], D_,W_) 
             
             # DDRX
             tau = D_ # *** assumes stress and strain-rate are co-axial *** (magnitude does not matter because decay rate is normalized)
             Gamma0 = g*deformExpr1['Gamma0'] + (1-g)*deformExpr2['Gamma0']
-            dndt += Gamma0 * sf.get_dndt_ij_ddrx(self.nlm_len, nlm_list[tt-1,:], tau) 
+            dndt += Gamma0 * sf.dndt_ddrx(nlm_list[tt-1,:], tau) 
             
             nlm_list[tt,:] = nlm_list[tt-1,:] + dt * np.matmul(dndt, nlm_list[tt-1,:])
         
@@ -301,7 +304,7 @@ class SyntheticFabric():
             N1 = int(t1/Nt * (self.N-1))
             
             ai = np.zeros((self.N,3))
-            for ii in np.arange(self.N): ai[ii,:] = sf.get_eigenframe(self.nlm[ii,:])[3]
+            for ii in np.arange(self.N): ai[ii,:] = sf.frame(self.nlm[ii,:], 'e')[3]
 
             # plot colors (colorbrewer)
             cb = '#1f78b4'
