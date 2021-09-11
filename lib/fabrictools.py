@@ -29,29 +29,10 @@ def discretize_fabric(nlm, lm, latres=60):
     
     return (F, lon,lat)
 
-def plot_ODF(nlm, lm, ax=None, cmap='PuOr_r', cblbl='', lvls = np.linspace(0.0,0.5,6), tickintvl=4):
+def plot_ODF(nlm, lm, ax=None, cmap='Greys', cblbl='', lvls = np.linspace(0.0,0.5,6), tickintvl=4):
     
     F, lon,lat = discretize_fabric(nlm, lm)
-
-#    lvls = np.linspace(0.0,0.5,6) # Contour lvls
-    Fplot = F
-    cmap = 'Greys'
-    
-
-#def plot_ODF(nlm, lm, ax=None, cmap='PuOr_r', cblbl='', tickintvl=4):
-#    
-#    F, lon,lat = discretize_fabric(nlm, lm)
-
-#    lvls = np.linspace(0.0,0.5,6) # Contour lvls
-#    Fplot = F
-#    cmap = 'Greys'
-#    
-#    if 0: 
-#        lvlmax = 0.7
-#        lvls = np.linspace(-lvlmax,lvlmax,9) # Contour lvls
-#        Fplot = F
-    
-    hdistr = ax.contourf(np.rad2deg(lon), np.rad2deg(lat), Fplot, transform=ccrs.PlateCarree(), levels=lvls, extend='max', cmap=cmap)
+    hdistr = ax.contourf(np.rad2deg(lon), np.rad2deg(lat), F, transform=ccrs.PlateCarree(), levels=lvls, extend='max', cmap=cmap)
 
     kwargs_gridlines = {'ylocs':np.arange(-90,90+30,30), 'xlocs':np.arange(0,360+45,45), 'linewidth':0.5, 'color':'black', 'alpha':0.25, 'linestyle':'-'}
     gl = ax.gridlines(crs=ccrs.PlateCarree(), **kwargs_gridlines)

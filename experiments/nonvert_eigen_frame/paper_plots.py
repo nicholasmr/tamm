@@ -26,9 +26,9 @@ import cartopy.crs as ccrs
 
 ### Layer stack config
 
-DEBUG = 1
+DEBUG = 0
 
-RESMUL = 1 if DEBUG else 5
+RESMUL = 1 if DEBUG else 6
 N_layers = 50*RESMUL + 1 # Number of layers
 N_frames = 20*RESMUL # Number of rotated frames of the radar system 
 
@@ -325,7 +325,7 @@ if 1:
     ax_eig.set_ylim([zkm[-1],zkm[I0]])
     ax_eig.set_ylabel(r'z ($\SI{}{\kilo\metre}$)', fontsize=FS)
        
-    setupAxis(ax_eig, (0.5,0.1), (0,1.0), r'$\lambda_i$', r'{\bf d}', spframe=frameon, frcxlims=1)
+    setupAxis(ax_eig, (0.5,0.1), (0,1.0), r'$\lambda_n$', r'{\bf d}', spframe=frameon, frcxlims=1)
     setcb(ax_eig, 0, phantom=True)
     
     #--------------------
