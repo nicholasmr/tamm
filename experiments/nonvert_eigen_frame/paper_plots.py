@@ -9,7 +9,7 @@ from specfabpy import specfabpy as sf
 
 from layer import *
 from layerstack import *
-from fabrictools import *
+from plottools import *
 
 import matplotlib.pyplot as plt
 import matplotlib as mpl
@@ -26,7 +26,7 @@ import cartopy.crs as ccrs
 
 ### Layer stack config
 
-DEBUG = 0
+DEBUG = 1
 
 RESMUL = 1 if DEBUG else 6
 N_layers = 50*RESMUL + 1 # Number of layers
@@ -35,7 +35,7 @@ N_frames = 20*RESMUL # Number of rotated frames of the radar system
 H = 2000 # Ice column height
 z = np.linspace(0,-H, N_layers) # Interface positions
 
-FABRIC_TYPE = 2  # 1 = single max, 2 = girdle
+FABRIC_TYPE = 1  # 1 = single max, 2 = girdle
 
 ### Radar config
 
@@ -60,10 +60,10 @@ DO_DIAGNOSTIC = 1 # Plot truncated profile results?
 
 ### Specfab
 
-nlm_len = sf.init(8)
+nlm_len = sf.init(4)
 lm_list = np.array([(0,0),(2,-2),(2,-1),(2,0),(2,1),(2,2)]).T
 nlm_list = np.zeros((N_layers,nlm_len), dtype=np.complex128)
-nlm_list[:,0] = 1/np.sqrt(4*np.pi)
+nlm_list[:,0] = 1/np.sqrt(4*np.pi) # normalized distribution
 
 ### Construct idealized fabric profiles
 
@@ -88,19 +88,18 @@ nlm_list[1:,2] = -np.conj(nlm_list[1:,4]) # n21m
 nlm_list[1:,1] = +np.conj(nlm_list[1:,5]) # n22m
     
 if DEBUG:
-    print('<c2> in first and last layer are:')
-    print(Layer.get_c2_from_n2m(nlm_list[0,1:6] /nlm_list[-1,0]))
-    print(Layer.get_c2_from_n2m(nlm_list[-1,1:6] /nlm_list[-1,0]))
+    print('<c^2> in first and last layer are:')
+    print(nlm_to_c2(nlm_list[0,:]))
+    print(nlm_to_c2(nlm_list[-1,:]))
 
 # Rotate ODF profile toward horizontal plane
 angles = np.deg2rad(np.linspace(0,-90, N_layers-1))
 for nn,b in enumerate(angles,1):
     c, s = np.cos(b), np.sin(b)
     Qy = np.array(((c, 0, s), (0,1,0), (-s,0,c))) # Rotation matrix
-    nlm_nn = nlm_list[nn,:].copy()
-    c2 = Layer.get_c2_from_n2m(nlm_nn[1:6]/nlm_nn[0]) 
-    c2_rot = np.matmul(np.matmul(Qy,c2),Qy.T)
-    nlm_list[nn,1:6] = Layer.get_n2m_from_c2(c2_rot) # Set rotated ODF spectral coefs
+    c2 = nlm_to_c2(nlm_list[nn,:]) 
+    c2_rot = np.matmul(np.matmul(Qy, c2), Qy.T)
+    nlm_list[nn,:6], _ = c2_to_nlm(c2_rot) # Set rotated ODF spectral coefs
 
 #---------------------
 # Run model
@@ -212,7 +211,7 @@ def plot_ODFs(axODFs, IplotODF, nlm_list, ei_ref, ODFsymb=r'\psi'):
         nlm_ii = IplotODF[ii]
         ax     = axODFs[ii]
         
-        plot_ODF(nlm_list[nlm_ii,:], lm_list, ax=axODFs[ii], cblbl=r'$%s(\SI{%1.0f}{\kilo\metre})/N$'%(ODFsymb,z[nlm_ii]*1e-3))
+        plot_ODF(nlm_list[nlm_ii,:], lm_list, ax=axODFs[ii], cblabel=r'$%s(\SI{%1.0f}{\kilo\metre})/N$'%(ODFsymb,z[nlm_ii]*1e-3))
         
         if ii == 0:
             
@@ -338,7 +337,7 @@ if 1:
     hleg.get_frame().set_linewidth(0.7);
     
     
-    setupAxis(ax_Pm, (20, 10), (-90,10), r'$\overline{P}_{ij}$ (dB)', r'{\bf e}', spframe=frameon)
+    setupAxis(ax_Pm, (20, 10), (-110,10), r'$\overline{P}_{ij}$ (dB)', r'{\bf e}', spframe=frameon)
     plt.setp(ax_Pm.get_yticklabels(), visible=False)    
     setcb(ax_Pm, 0, phantom=True)
 
