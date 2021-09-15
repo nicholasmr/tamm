@@ -61,7 +61,6 @@ DO_DIAGNOSTIC = 1 # Plot truncated profile results?
 ### Specfab
 
 nlm_len = sf.init(4)
-lm_list = np.array([(0,0),(2,-2),(2,-1),(2,0),(2,1),(2,2)]).T
 nlm_list = np.zeros((N_layers,nlm_len), dtype=np.complex128)
 nlm_list[:,0] = 1/np.sqrt(4*np.pi) # normalized distribution
 
@@ -99,7 +98,7 @@ for nn,b in enumerate(angles,1):
     Qy = np.array(((c, 0, s), (0,1,0), (-s,0,c))) # Rotation matrix
     c2 = nlm_to_c2(nlm_list[nn,:]) 
     c2_rot = np.matmul(np.matmul(Qy, c2), Qy.T)
-    nlm_list[nn,:6], _ = c2_to_nlm(c2_rot) # Set rotated ODF spectral coefs
+    nlm_list[nn,:6], lm_list = c2_to_nlm(c2_rot) # Set rotated ODF spectral coefs
 
 #---------------------
 # Run model

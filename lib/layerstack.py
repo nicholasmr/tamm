@@ -7,13 +7,13 @@ This class represents a vertical stack of horizontally (x,y) homogeneous layers 
 import numpy as np
 
 from layer import *
-from layer_GTM import *
+from layer_PPJ import *
 
 class LayerStack:
     
     def __init__(self, nlm, z, N_frames=100, epsa=[3.17], epsc=[3.17-0.034], sigma=[1e-5], mu=1, modeltype='GTM', VERBOSE=1): 
 
-        self.modeltype = modeltype # GTM (General Transfer Matrix, aka. tamm) or FP (Fujita--Paren)
+        self.modeltype = modeltype # GTM (General Transfer Matrix) or FP (Fujita--Paren)
         if self.modeltype not in ['GTM','FP']: raise ValueError('Argument "modeltype" must be either "GTM" or "FP"')
         
         # Dimensions
@@ -21,7 +21,7 @@ class LayerStack:
         self.N_frames   = N_frames  # number of rotated frames
         self.layerlist  = np.arange(self.N_layers)
         self.framelist  = np.arange(self.N_frames)
-        self.beta       = np.linspace(0, np.pi, self.N_frames) # horizontal rotations [rad]
+        self.beta       = np.linspace(0, np.pi, self.N_frames) # horizontal rotations (radians)
         
         self.z  = np.hstack(([np.abs(z[1]-z[0])],z)) # Add isotropic surface layer with thickness equal to first subsurface layer 
         self.dz = np.abs(np.diff(self.z))
@@ -33,12 +33,12 @@ class LayerStack:
         self.sigma = np.full((self.N_layers), sigma[0]) if len(sigma)==1 else sigma 
         
         # Save spectral fabric profile
-        self.n2m = np.array([ nlm[nn, np.array([1,2,3,4,5])]/nlm[nn,0] for nn in np.arange(self.N_layers) ]) # normalized l=2 spectral coefs
-        self.lm  = np.array([(2,-2),(2,-1),(2,0),(2,1),(2,2)]).T
+        self.nlm = nlm[:, :6] # Save only L=2 truncation (model does not need higher-order modes)
+        self.lm  = np.array([(0,0), (2,-2),(2,-1),(2,0),(2,1),(2,2)]).T
         
         ### Errors, warnings and verbosity
         
-        if len(self.z) != 1+len(self.n2m): raise ValueError('len(z) (=%i) != 1+len(n2m) (=%i)'%(len(self.z), 1+len(self.n2m)))
+        if len(self.z) != 1+len(self.nlm): raise ValueError('len(z) (=%i) != 1+len(nlm) (=%i)'%(len(self.z), 1+len(self.nlm)))
         
         if np.any(nlm[0,1:]): raise ValueError('n_2^m of top layer must vanish (surface layer must be isotropic)')
         
@@ -55,14 +55,14 @@ class LayerStack:
         c2 = np.zeros((self.N_layers,3,3))
 
         for nn in self.layerlist:
-            c2[nn,:,:] = nlm_to_c2(self.n2m[nn,:]) # c2 == <c^2> == a^(2)
+            c2[nn,:,:] = nlm_to_c2(self.nlm[nn,:]) # Equivalent notation:  c2 = <c^2> = a^(2)
             (eigvals[nn,:], e1[nn,:], e2[nn,:], e3[nn,:]) = eigenframe(c2[nn,:,:])
 
         return (eigvals, e1,e2,e3, c2)
     
     
     def get_layerstack(self, beta, f, zeta):
-        return [Layer(self.n2m[nn], beta, self.dz[nn], f, zeta, self.epsa[nn], self.epsc[nn], self.sigma[nn], self.mu, modeltype=self.modeltype) for nn in self.layerlist] 
+        return [Layer(self.nlm[nn], beta, self.dz[nn], f, zeta, self.epsa[nn], self.epsc[nn], self.sigma[nn], self.mu, modeltype=self.modeltype) for nn in self.layerlist] 
 
 
     def get_propconst(self):
@@ -74,7 +74,7 @@ class LayerStack:
 
     def get_T_R(self, Aprev,Aprev_inv, Anext,Anext_inv):
         
-        # Calculates the 2x2 reflection matrix and downward and upward 2x2 transmission matrices for the interface between "Aprev" and "Anext".
+        # Calculates the 2x2 matrices for reflection (R), downward transmission (T), and upward transmission (Trev)
         
         ### Downward propergating wave (from Jeannin (2019) GTM code)
        
@@ -168,7 +168,7 @@ class LayerStack:
             # Reflection matrices are based on Paren (1981) scattering
             ff = 0 # any beta frame will do (eigenvalues are not changed by rotation the frame of reference)
             R0flat = np.array([[ (frm_layers[ff][nn].ai_horiz[ii] - frm_layers[ff][nn+1].ai_horiz[ii])*(self.epsc[nn]-self.epsa[nn]) for ii in (0,1)] for nn in laylist], dtype=np.complex128)
-            #R0flat *= 1/0.03404121647756628 # tamm cal.
+            #R0flat *= 1/0.03404121647756628 # Cal. against GTM ?
             # ...reshape
             R0 = np.zeros((len(laylist), 2,2), dtype=np.complex128)
             R0[:,0,0] = +R0flat[:,0]

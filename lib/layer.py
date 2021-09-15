@@ -7,73 +7,68 @@ This subclass wraps a spectral fabric formulation around the Passler and Paarman
 import numpy as np
 import numpy.linalg as lag
 
-from layer_GTM import *
+from layer_PPJ import *
 
-class Layer(Layer_GTM):
+class Layer(Layer_PPJ):
     
-    def __init__(self, n2m, beta, thickness, f, zeta, epsa, epsc, sigma, mu, modeltype='GTM'): 
+    def __init__(self, nlm, beta, thickness, f, zeta, epsa, epsc, sigma, mu, modeltype='GTM'): 
         
         super().__init__()
         
-        self.modeltype = modeltype # GTM (General Transfer Matrix, aka. tamm) or FP (Fujita--Paren)
+        self.modeltype = modeltype # GTM (General Transfer Matrix) or FP (Fujita--Paren)
+        if self.modeltype not in ['GTM','FP']: raise ValueError('Argument "modeltype" must be either "GTM" or "FP"')
         
-        self.thick  = thickness # layer thickness (d)
-        self.f      = f         # plane wave frequency
+        self.thick  = thickness # Layer thickness (d)
+        self.f      = f         # Plane wave frequency 
         self.zeta   = zeta      # x-component of wave vector (dimensionless)
         
-        self.epsa  = epsa  # permitivity perdendicular to c-axis
-        self.epsc  = epsc  # permitivity parallel to c-axis
-        self.sigma = sigma # single crystal isotropic conductivity
-        self.mu    = mu    # relative permeability
+        self.epsa  = epsa  # Complex permitivity perdendicular to c-axis
+        self.epsc  = epsc  # Complex permitivity parallel to c-axis
+        self.sigma = sigma # Single crystal isotropic conductivity
+        self.mu    = mu    # Relative permeability
         
-        self.init_with_n2m(n2m, beta)
+        self.setup(nlm, beta) 
 
         
-    def init_with_n2m(self, n2m, beta):
+    def setup(self, nlm, beta):
         
-        self.set_fabric(n2m, beta)
-        self.epsilon = self.get_eps_from_n2m(self.n2m)  
-        self.init_with_eps(self.epsilon)
+        # Given the orientation fabric (nlm), all layer matrices are calculated by this method.
+        # Call this method if you wish to update the layer with a new orientation fabric and re-calculate all layer properties (matrices etc.).
         
-
-    def set_fabric(self, n2m, beta):
-    
         # Fabric frame 
-        self.n2m_0   = n2m
-        self.ccavg_0 = nlm_to_c2(n2m) 
+        self.nlm_0   = nlm # Save copy
+        self.n2m_0   = np.divide(nlm[1:6], nlm[0]) # normalized l=2 coefs: [n_2^-2/n_0^0, n_2^-1/n_0^0, ..., n_2^2/n_0^0]
+        self.ccavg_0 = nlm_to_c2(nlm) # <c^2> in fabric frame
         
         # Measurement frame
-        self.beta  = beta
-        self.n2m   = self.rotate_frame(n2m, beta) # normalized ODF coef vector [n22m/n00, n21m/n00, n20/n00, n21p/n00, n22p/n00]
-        self.ccavg = nlm_to_c2(self.n2m) # <c^2>
-        
-        
-    def rotate_frame(self, n2m, beta):
-        
+        self.beta = beta
         rotmat = np.diag([np.exp(+1j*m*beta) for m in np.arange(-2,2+1)])
-        return np.matmul(rotmat,n2m)
-    
-    
-    def get_eps_from_n2m(self, n2m):
+        self.n2m = np.matmul(rotmat, self.n2m_0) 
+        self.ccavg = nlm_to_c2(self.n2m) # <c^2> in measurement frame
+        
+        # Calculate permitivity tensor and (transfer) matrices
+        self.epsilon = self.get_epsavg(self.ccavg)  
+        self.set_matrices() # Requires self.epsilon be set
+        
+
+    def get_epsavg(self, ccavg):
         
         monopole   = (2*self.epsa+self.epsc)/3 * np.eye(3)
-        quadrupole = (self.epsc-self.epsa) * (self.ccavg - np.eye(3)/3)
-        epsavg     = np.real(monopole+quadrupole) # Should be real. If fabric is rotated using e.g. a complex phase, numerical errors might cause small but non-zero imaginary values.
+        quadrupole = (self.epsc-self.epsa) * (ccavg - np.eye(3)/3)
+        epsavg     = np.real(monopole+quadrupole) # Should be real; numerical errors might cause small non-zero imaginary parts.
         
-        epsdprime = self.sigma/(2*np.pi*self.f*eps0)
-        epsavg = epsavg - 1j*epsdprime * np.eye(3)
+        epsdprime = self.sigma/(2*np.pi*self.f*eps0) 
+        epsavg = epsavg - 1j*epsdprime * np.eye(3) # Add isotropic imaginary part (due to acidity)
         
         return epsavg
     
     
-    def init_with_eps(self, eps):
-        
-        self.epsilon = eps # 3x3 matrix of permittivity at a given frequency
+    def set_matrices(self):
         
         ### Horizontal eigenvalues 
         
         self.ai_horiz, self.Qeig = lag.eig(self.ccavg_0[:2,:2])
-        self.Qeiginv = self.Qeig.T # lag.inv(self.Qeig)
+        self.Qeiginv = self.Qeig.T # or lag.inv(self.Qeig)
         self.eigang = np.arctan2(self.Qeig[1,0],self.Qeig[0,0])
         
         ### Setup layer matrices
@@ -125,7 +120,6 @@ class Layer(Layer_GTM):
         Qz = np.array(((c, -s), (s, c))) # rotation matrix
         return np.matmul(Qz, np.matmul(mat_eig_frame, Qz.T)) # = mat_meas_frame
        
-
 
 #------------------------
 # Fabric routines

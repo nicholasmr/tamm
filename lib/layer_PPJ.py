@@ -79,7 +79,7 @@ def exact_inv(M):
     return out
 
 
-class Layer_GTM:
+class Layer_PPJ:
     
     def __init__(self):
         
