@@ -76,7 +76,7 @@ class LayerStack:
         
         # Calculates the 2x2 matrices for reflection (R), downward transmission (T), and upward transmission (Trev)
         
-        ### Downward propergating wave (from Jeannin (2019) GTM code)
+        ### Downward propergating wave (modified Jeannin (2019) GTM code)
        
         Delta1234 = np.array([[1,0,0,0],
                               [0,0,1,0],

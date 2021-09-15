@@ -26,7 +26,7 @@ import cartopy.crs as ccrs
 
 ### Layer stack config
 
-DEBUG = 1
+DEBUG = 0
 
 RESMUL = 1 if DEBUG else 6
 N_layers = 50*RESMUL + 1 # Number of layers
@@ -35,7 +35,7 @@ N_frames = 20*RESMUL # Number of rotated frames of the radar system
 H = 2000 # Ice column height
 z = np.linspace(0,-H, N_layers) # Interface positions
 
-FABRIC_TYPE = 1  # 1 = single max, 2 = girdle
+FABRIC_TYPE = 2  # 1 = single max, 2 = girdle
 
 ### Radar config
 
@@ -336,7 +336,7 @@ if 1:
     hleg.get_frame().set_linewidth(0.7);
     
     
-    setupAxis(ax_Pm, (20, 10), (-110,10), r'$\overline{P}_{ij}$ (dB)', r'{\bf e}', spframe=frameon)
+    setupAxis(ax_Pm, (20, 10), (-110,10), r'$\overline{P}_{jk}$ (dB)', r'{\bf e}', spframe=frameon)
     plt.setp(ax_Pm.get_yticklabels(), visible=False)    
     setcb(ax_Pm, 0, phantom=True)
 
