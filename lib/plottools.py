@@ -5,6 +5,8 @@ import copy, sys, code # code.interact(local=locals())
 import numpy as np
 import scipy.special as sp
 
+from layer import *
+
 import matplotlib.pyplot as plt
 from matplotlib import rcParams, rc
 import matplotlib.ticker as mticker
@@ -63,90 +65,98 @@ def plot_ODF(nlm, lm, ax=None, cmap='Greys', cblabel='', lvls = np.linspace(0.0,
     
     return hdistr
 
-def plot_returns(z, returns):
+### --------------------------------
+
+def plot_returns(z, returns, a2, eigvals, vminmax=15):
     
     Pm_HH,Pm_HV, dP_HH,dP_HV, c_HHVV, E_HH,E_HV = returns
+
     zkm = 1e-3 * z
+    frameon = 1 # Frame on subplot labels?
+    I0 = 1 # Subsurface layer index (if =1 then skip surface reflection in results)
     
-    def writeSubplotLabel(ax,loc,txt,frameon=True, alpha=1.0, fontsize=FS, pad=0.15, ma='none', bbox=None):
-        at = AnchoredText(txt, loc=loc, prop=dict(size=fontsize), frameon=frameon, bbox_to_anchor=bbox, bbox_transform=ax.transAxes)
-        at.patch.set_linewidth(0.7)
-        ax.add_artist(at)
-    
-    def plotRxMaps(ax, Rx, vmin=None, vmax=None, cmap='RdBu_r'):
-        
-        extent = [0,180,zkm[-1],0]
-        h = ax.imshow(Rx, vmin=vmin, vmax=vmax, cmap=cmap, extent=extent)
-        ax.set_xlabel(r'$\beta$ ($\SI{}{\degree}$)')
-        ax.set_aspect(aspect="auto")
-        ticks = [0,45,90,90+45,180]
-        ax.set_xticks(ticks[::2])
-        ax.set_xticks(ticks, minor=True)
-        return h
-    
-    def setupAxis(ax, daam, xminmax, xlbl, splbl, spframe=1, frcxlims=0):
-
-        xlim = ax.get_xlim()
-        da, daminor = daam
-        xmin,xmax = xminmax
-        ax.set_xticks(np.arange(xmin,xmax+da,da))
-        ax.set_xticks(np.arange(xmin,xmax+da,daminor), minor=True)
-        ax.set_xlim(xlim if not frcxlims else xminmax)
-        ax.set_xlabel(xlbl)
-        writeSubplotLabel(ax, 2, splbl, frameon=spframe, alpha=1.0, fontsize=FS, pad=0.0)
-
-    def setcb(ax, h, ticks=[], xlbl='', phantom=False):
-        
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes("bottom", size="3.5%", pad=0.6)
-        if not phantom:
-            hcb = plt.colorbar(h, cax=cax, extend='both', ticks=ticks[::2], **cbkwargs) 
-            hcb.ax.xaxis.set_ticks(ticks, minor=True)
-            hcb.ax.set_xlabel(xlbl, labelpad=0)
-        else:
-            cax.set_axis_off()
-
     #--------------------    
+    
+    inclination = 45 # view angle
+    rot0 = -90
+    rot = -55 + rot0 # view angle
+    
+    prj = ccrs.Orthographic(rot, 90-inclination)
+    geo = ccrs.Geodetic()
 
-    scale = 0.3
-    fig = plt.figure(figsize=(20*scale,15*scale))
+    IaxODF = [0,1,2]
+    IplotODF = [1, int(len(z)/2)-1, -1] # time steps to plot ODF for
 
-    gs = gridspec.GridSpec(1, 4)
-    gs.update(top=0.965, bottom=0.11, left=-0.02, right=1-0.02, wspace=0.17, hspace=0.95)
-    ax_Pm     = fig.add_subplot(gs[0, 0])
-    ax_dP_HH  = fig.add_subplot(gs[0, 1], sharey=ax_Pm)
-    ax_dP_HV  = fig.add_subplot(gs[0, 2], sharey=ax_Pm)
-    ax_c_HHVV = fig.add_subplot(gs[0, 3], sharey=ax_Pm)
+    nlm = np.zeros((len(IplotODF),6))
+    for I,ii in enumerate(IplotODF):
+        nlm[I,:], lm = c2_to_nlm(a2[ii,:,:]) 
+
+    #--------------------
+
+    scale = 0.35
+    fig = plt.figure(figsize=(25*scale,13*scale))
+    
+    gs_master = gridspec.GridSpec(1, 2, width_ratios=[1/6, 5/6])
+    gs_master.update(top=0.965, bottom=0.11, left=-0.0175, right=1-0.02, wspace=0.065)
+    
+    gs = gridspec.GridSpecFromSubplotSpec(3, 1, subplot_spec=gs_master[0], hspace=0.70)
+    ax_ODFs = [fig.add_subplot(gs[ii, 0], projection=prj) for ii in IaxODF]
+       
+    k = 0.9
+    gs = gridspec.GridSpecFromSubplotSpec(1, 5, subplot_spec=gs_master[1], wspace=0.17, hspace=0.95, width_ratios=[k,k,1,1,1])
+    ax_eig    = fig.add_subplot(gs[0, 0])
+    ax_Pm     = fig.add_subplot(gs[0, 1], sharey=ax_eig)
+    ax_dP_HH  = fig.add_subplot(gs[0, 2], sharey=ax_eig)
+    ax_dP_HV  = fig.add_subplot(gs[0, 3], sharey=ax_eig)
+    ax_c_HHVV = fig.add_subplot(gs[0, 4], sharey=ax_eig)
     
     lw = 1.6
-    legkwargs = {'frameon':True, 'fancybox':False, 'edgecolor':'k', 'framealpha':0.9, 'ncol':1, 'handlelength':1.34, 'labelspacing':0.3}
-    cbkwargs  = {'orientation':'horizontal', 'fraction':1.3, 'aspect':10}
+    legkwargs = {'frameon':True, 'fancybox':False, 'edgecolor':'k', 'framealpha':0.85, 'ncol':1, 'handlelength':1.34, 'labelspacing':0.3}
+    
+    #--------------------
+    
+    plot_ODFs(ax_ODFs, IplotODF, nlm, lm, zkm, geo, rot0)
+    
+    #--------------------
+    
+    dzhalf = -np.abs(zkm[0]-zkm[1])/2
+    ax_eig.plot(eigvals[I0:,0], zkm[(I0):-1]+dzhalf, '-k',  lw=lw, label=r'$\lambda_1$')
+    ax_eig.plot(eigvals[I0:,1], zkm[(I0):-1]+dzhalf, '--k', lw=lw, label=r'$\lambda_2$')
+    ax_eig.plot(eigvals[I0:,2], zkm[(I0):-1]+dzhalf, ':k',  lw=lw, label=r'$\lambda_3$')
+    
+    hleg = ax_eig.legend(loc=1, bbox_to_anchor=(1.125,1), **legkwargs)
+    hleg.get_frame().set_linewidth(0.7);
+    
+    da, daminor = 1, 0.1
+    ax_eig.set_yticks([0,-1,-2])
+    ax_eig.set_yticks(np.flipud(-np.arange(zkm[I0],3,daminor)), minor=True)
+    ax_eig.set_ylim([zkm[-1],zkm[I0]])
+    ax_eig.set_ylabel(r'z ($\SI{}{\kilo\metre}$)', fontsize=FS)
+       
+    setupAxis(ax_eig, (0.5,0.1), (0,1.0), r'$\lambda_n$', r'{\bf d}', spframe=frameon, frcxlims=1)
+    setcb(ax_eig, 0, phantom=True)
     
     #--------------------
 
-    ax_Pm.plot(Pm_HH, zkm[1:-1],'-k',  lw=lw, label=r'$\overline{P}_{\mathrm{HH}}$')
-    ax_Pm.plot(Pm_HV, zkm[1:-1],'--k', lw=lw, label=r'$\overline{P}_{\mathrm{HV}}$')
-    hleg = ax_Pm.legend(loc=2,  **legkwargs)
+    ax_Pm.plot(Pm_HH[I0:], zkm[(I0+1):-1], '-k',  lw=lw, label=r'$\overline{P}_{\mathrm{HH}}$')
+    ax_Pm.plot(Pm_HV[I0:], zkm[(I0+1):-1], '--k', lw=lw, label=r'$\overline{P}_{\mathrm{HV}}$')
+    
+    hleg = ax_Pm.legend(loc=1, bbox_to_anchor=(1.125,1), **legkwargs)
     hleg.get_frame().set_linewidth(0.7);        
-    setupAxis(ax_Pm, (20, 10), (-150,10), r'$\overline{P}$ (dB)', '', spframe=0)
-    #
-    da, daminor = -0.5, -0.1
-    ax_Pm.set_yticks(np.arange(zkm[1],zkm[-1]*1.1,da))
-    ax_Pm.set_yticks(np.arange(zkm[1],zkm[-1]*1.1,daminor), minor=True)
-    ax_Pm.set_ylabel(r'z ($\SI{}{\kilo\metre}$)')
-    #
+    setupAxis(ax_Pm, (20, 10), (-150,10), r'$\overline{P}_{jk}$ (dB)', r'{\bf e}', spframe=frameon)
+    plt.setp(ax_Pm.get_yticklabels(), visible=False)   
     setcb(ax_Pm, 0, phantom=True)
     
     #--------------------
    
-    vmin=-10; vmax=-vmin
-    ticks = [-10,-5,0,5,10]
-    h_HH = plotRxMaps(ax_dP_HH, dP_HH, vmin=vmin,vmax=vmax)
-    h_HV = plotRxMaps(ax_dP_HV, dP_HV, vmin=vmin,vmax=vmax)
+    vmin=-vminmax; vmax=-vmin
+    ticks = np.arange(vmin, vmax+1e-5, vmax/2)
+    h_HH = plotRxMaps(ax_dP_HH, dP_HH, zkm, I0, vmin=vmin,vmax=vmax)
+    h_HV = plotRxMaps(ax_dP_HV, dP_HV, zkm, I0, vmin=vmin,vmax=vmax)
     plt.setp(ax_dP_HH.get_yticklabels(), visible=False)
     plt.setp(ax_dP_HV.get_yticklabels(), visible=False)
-    writeSubplotLabel(ax_dP_HH,2,'$\delta P_{\mathrm{HH}}$',frameon=1, alpha=1.0, fontsize=FS, pad=0.0)
-    writeSubplotLabel(ax_dP_HV,2,'$\delta P_{\mathrm{HV}}$',frameon=1, alpha=1.0, fontsize=FS, pad=0.0)
+    writeSubplotLabel(ax_dP_HH, 2, r'{\bf f}', frameon=frameon, alpha=1.0, fontsize=FS)
+    writeSubplotLabel(ax_dP_HV, 2, r'{\bf g}', frameon=frameon, alpha=1.0, fontsize=FS)
     setcb(ax_dP_HH, h_HH, ticks=ticks, xlbl=r'$\delta P_{\mathrm{HH}}$ (dB)')
     setcb(ax_dP_HV, h_HV, ticks=ticks, xlbl=r'$\delta P_{\mathrm{HV}}$ (dB)')
     
@@ -154,12 +164,77 @@ def plot_returns(z, returns):
 
     vmin=-180; vmax=-vmin
     ticks = [-180,-90,0,90,180]
-    h = plotRxMaps(ax_c_HHVV, np.angle(c_HHVV, deg=True), vmin=vmin,vmax=vmax, cmap='twilight_shifted')
+    h = plotRxMaps(ax_c_HHVV, np.angle(c_HHVV, deg=True), zkm, I0, vmin=vmin,vmax=vmax, cmap='twilight_shifted')
     plt.setp(ax_c_HHVV.get_yticklabels(), visible=False)
-    writeSubplotLabel(ax_c_HHVV,2,r'$\varphi_{\mathrm{HV}}$',frameon=1, alpha=1.0, fontsize=FS, pad=0.0)
+    writeSubplotLabel(ax_c_HHVV, 2, r'{\bf h}' ,frameon=frameon, alpha=1.0, fontsize=FS)
     setcb(ax_c_HHVV, h, ticks=ticks, xlbl=r'$\varphi_{\mathrm{HV}}$ (\SI{}{\degree})')
 
     #--------------------
 
-    plt.show()
+    return (plt, ax_ODFs, ax_eig, ax_Pm, ax_dP_HH, ax_dP_HV, ax_c_HHVV, IplotODF, prj,geo,rot0)
 
+
+def writeSubplotLabel(ax, loc, txt, frameon=True, alpha=1.0, fontsize=FS, pad=0.3, ma='none', bbox=None):
+    at = AnchoredText(txt, loc=loc, prop=dict(size=fontsize), frameon=frameon, pad=pad, bbox_to_anchor=bbox, bbox_transform=ax.transAxes)
+    at.patch.set_linewidth(0.7)
+    ax.add_artist(at)
+
+
+def plotRxMaps(ax, Rx, zkm, I0, vmin=None, vmax=None, cmap='RdBu_r'):
+    
+    extent = [0,180,zkm[-2],zkm[I0]]
+    h = ax.imshow(Rx[I0:,:], vmin=vmin, vmax=vmax, cmap=cmap, extent=extent)
+    ax.set_xlabel(r'$\beta$ ($\SI{}{\degree}$)')
+    ax.set_aspect(aspect="auto")
+    ticks = [0,45,90,90+45,180]
+    ax.set_xticks(ticks[::2])
+    ax.set_xticks(ticks, minor=True)
+    return h
+
+
+def setupAxis(ax, daam, xminmax, xlbl, splbl, spframe=1, frcxlims=0):
+
+    xlim = ax.get_xlim()
+    da, daminor = daam
+    xmin,xmax = xminmax
+    ax.set_xticks(np.arange(xmin,xmax+da,da))
+    ax.set_xticks(np.arange(xmin,xmax+da,daminor), minor=True)
+    ax.set_xlim(xlim if not frcxlims else xminmax)
+    ax.set_xlabel(xlbl)
+    writeSubplotLabel(ax, 2, splbl, frameon=spframe, alpha=1.0, fontsize=FS)
+
+
+def setcb(ax, h, ticks=[], xlbl='', phantom=False):
+    
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("bottom", size="3.5%", pad=0.6)
+    if not phantom:
+        cbkwargs  = {'orientation':'horizontal', 'fraction':1.3, 'aspect':10}
+        hcb = plt.colorbar(h, cax=cax, extend='both', ticks=ticks[::2], **cbkwargs) 
+        hcb.ax.xaxis.set_ticks(ticks, minor=True)
+        hcb.ax.set_xlabel(xlbl, labelpad=0)
+    else:
+        cax.set_axis_off()
+
+
+def plot_ODFs(ax_ODFs, Iplot, nlm_list, lm, zkm, geo, rot0, ODFsymb=r'\psi', panelno='a'):
+    
+    for ii in np.arange(len(ax_ODFs)):
+        
+        ax = ax_ODFs[ii]
+        plot_ODF(nlm_list[ii,:], lm, ax=ax, cblabel=r'$%s(\SI{%1.0f}{\kilo\metre})/N$'%(ODFsymb, zkm[Iplot[ii]]))
+        
+        if ii == 0:
+            colorxi = '#a50f15'
+            ax.plot([0],[90],'.',       color=colorxi, transform=geo)
+            ax.plot([rot0],[0],'.',     color=colorxi, transform=geo)
+            ax.plot([2*rot0],[0],'.',   color=colorxi, transform=geo)
+            ax.text(rot0-120, 62,   r'$\vu{z}$', color=colorxi, horizontalalignment='left', transform=geo)
+            ax.text(rot0-27, -0,    r'$\vu{y}$', color=colorxi, horizontalalignment='left', transform=geo)
+            ax.text(2*rot0+10, -8,  r'$\vu{x}$', color=colorxi, horizontalalignment='left', transform=geo)
+        
+        subplotkwargs = {'frameon':1, 'alpha':1.0, 'fontsize':FS, 'pad':0.275, }
+        writeSubplotLabel(ax,2,r'{\bf %s}'%(chr(ord(panelno)+ii)), bbox=(-0.35,1.25), **subplotkwargs)
+        
+        ax.set_global()
+        
