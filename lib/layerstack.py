@@ -33,7 +33,7 @@ class LayerStack:
         self.sigma = np.full((self.N_layers), sigma[0]) if len(sigma)==1 else sigma 
         
         # Save spectral fabric profile
-        self.nlm = nlm[:, :6] # Save only L=2 truncation (model does not need higher-order modes)
+        self.nlm = nlm[:, :6] # Save only L=2 truncation (model does not depend on higher-order modes)
         self.lm  = np.array([(0,0), (2,-2),(2,-1),(2,0),(2,1),(2,2)]).T
         
         ### Errors, warnings and verbosity
@@ -46,7 +46,7 @@ class LayerStack:
         if self.VERBOSE: print('Initialized "%s" layer stack: frames x layers = %i x %i'%(self.modeltype, self.N_frames,self.N_layers))
 
     
-    def get_eigenframe(self):
+    def get_eigenbasis(self):
         
         # Get eigen values and vectors for the reference stack/frame (assume the first frame is the lab frame, but of course does not matter for the eigenvalues).
         
@@ -56,7 +56,7 @@ class LayerStack:
 
         for nn in self.layerlist:
             c2[nn,:,:] = nlm_to_c2(self.nlm[nn,:]) # Equivalent notation:  c2 = <c^2> = a^(2)
-            (eigvals[nn,:], e1[nn,:], e2[nn,:], e3[nn,:]) = eigenframe(c2[nn,:,:])
+            (eigvals[nn,:], e1[nn,:], e2[nn,:], e3[nn,:]) = eigenbasis(c2[nn,:,:])
 
         return (eigvals, e1,e2,e3, c2)
     

@@ -17,14 +17,14 @@ from plottools import *
 
 ### Layer stack config
 
-FABRIC_TYPE   = 2 # 1 = single max, 2 = girdle
-DO_DIAGNOSTIC = 1 # Plot truncated profile results? ($\psi^\dagger$ profile)
+FABRIC_TYPE   = 1 # 1 = single max, 2 = girdle
+DO_DIAGNOSTIC = 0 # Plot truncated profile results? ($\psi^\dagger$ profile)
 
-DEBUG         = 0 # If 1, then plot in lower resolution
+DEBUG         = 1 # If 1, then plot in lower resolution
 
-RESMUL = 1 if DEBUG else 6
-N_layers = 50*RESMUL + 1 # Number of layers
-N_frames = 20*RESMUL # Number of rotated frames of the radar system 
+RESMUL = 1.5 if DEBUG else 6
+N_layers = int(50*RESMUL) + 1 # Number of layers
+N_frames = int(20*RESMUL) # Number of rotated frames of the radar system 
 
 H = 2000 # Ice column height
 z = np.linspace(0,-H, N_layers) # Interface positions
@@ -40,7 +40,7 @@ freq  = 179.0e6 # Transmitted frequency from surface layer
 ### Transfer matrix model config
 
 #mt = 'FP' # Fujita--Paren
-mt = 'GTM' # GTM (Rathmann et al., 2021)
+mt = 'GTM' # General Transfer Matrix model for glaciology (Rathmann et al., 2021)
 
 #---------------------
 # Setup
@@ -68,15 +68,17 @@ if FABRIC_TYPE == 2:
 
 # Strengthen fabric profiles with depth
 linvec = np.linspace(0.5,1, N_layers-1)
-nlm_list[1:,3] =  n20*linvec # n20
-nlm_list[1:,4] = +n21*linvec # n21p
-nlm_list[1:,5] = +n22*linvec # n22p
-nlm_list[1:,2] = -np.conj(nlm_list[1:,4]) # n21m
-nlm_list[1:,1] = +np.conj(nlm_list[1:,5]) # n22m
+I1 = 1 # First subsurface layer (should be 1, else for debugging)
+nlm_list[I1:,3] =  n20*linvec[(I1-1):] # n20
+nlm_list[I1:,4] = +n21*linvec[(I1-1):] # n21p
+nlm_list[I1:,5] = +n22*linvec[(I1-1):] # n22p
+nlm_list[:,2] = -np.conj(nlm_list[:,4]) # n21m
+nlm_list[:,1] = +np.conj(nlm_list[:,5]) # n22m
     
-if DEBUG:
+if 0 and DEBUG:
     print('a^(2) in first and last layer are:')
     print(nlm_to_c2(nlm_list[0,:]))
+    print(nlm_to_c2(nlm_list[1,:]))
     print(nlm_to_c2(nlm_list[-1,:]))
     
     print('nlm in first and last last layer are:')
@@ -92,6 +94,19 @@ for nn,b in enumerate(angles,1):
     c2_rot = np.matmul(np.matmul(Qy, c2), Qy.T)
     nlm_list[nn,:6], lm_list = c2_to_nlm(c2_rot) # Set rotated ODF spectral coefs
 
+# Debug, rotate also fabric in the horizontal plane with depth
+if 0: 
+    angles = np.deg2rad(np.linspace(0,90, N_layers-1))
+    nlm_ref = nlm_list[-1,:].copy()
+    for nn,b in enumerate(angles,1):
+        c, s = np.cos(b), np.sin(b)
+        Qz = np.array(((c, -s, 0), (s,c,0), (0,0,1))) # Rotation matrix for rotations around z-axis.
+        c2 = nlm_to_c2(nlm_list[nn,:]) 
+        #c2 = nlm_to_c2(nlm_ref) 
+        c2_rot = np.matmul(np.matmul(Qz, c2), Qz.T)
+        nlm_list[nn,:6], lm_list = c2_to_nlm(c2_rot) # Set rotated ODF spectral coefs
+    
+    
 #---------------------
 # Run model
 #---------------------
@@ -101,7 +116,7 @@ for nn,b in enumerate(angles,1):
 lstack = LayerStack(nlm_list, z, N_frames=N_frames, modeltype=mt) # init layer stack
 returns = lstack.get_returns(E0, f=freq, alpha=alpha) # get returns for radar config
 Pm_HH,Pm_HV, dP_HH,dP_HV, c_HHVV, E_HH,E_HV = returns # unpack
-eigvals, e1,e2,e3, a2 = lstack.get_eigenframe() 
+eigvals, e1,e2,e3, a2 = lstack.get_eigenbasis() 
 
 lm   = lstack.lm   
 zkm  = lstack.z*1e-3
@@ -115,7 +130,7 @@ if DO_DIAGNOSTIC:
     lstack_trunc = LayerStack(nlm_list_trunc, z, N_frames=N_frames, modeltype=mt)
     returns_trunc = lstack_trunc.get_returns(E0, f=freq, alpha=alpha)
     Pm_HH_trunc,Pm_HV_trunc, dP_HH_trunc,dP_HV_trunc, c_HHVV_trunc, E_HH_trunc,E_HV_trunc = returns_trunc
-    _, e1_trunc,e2_trunc,e3_trunc, a2_trunc = lstack_trunc.get_eigenframe()
+    _, e1_trunc,e2_trunc,e3_trunc, a2_trunc = lstack_trunc.get_eigenbasis()
 
 ### Oblique incidence
 
@@ -144,9 +159,9 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 import cartopy.crs as ccrs
 
-I0 = 1 # Subsurface layer index (if =1 then skip surface reflection in results)
+I0 = 1 # Layer index of first layer to plot (if I0=1 then skip surface reflection in results)
 
-(_, ax_ODFs, _,_,_,_,_, IplotODF, prj,geo,rot0) = plot_returns(lstack.z, returns, a2, eigvals)
+(_, ax_ODFs, _,_,_,_,_, IplotODF, prj,geo,rot0) = plot_returns(lstack.z, returns, a2, eigvals, I0=I0)
 
 # Plot relevant principal axis on first ODF plot
 def plot_ei(ax, vec, geo, mrk='o', lbl=False, phi_rel=0, theta_rel=-18):
@@ -333,3 +348,15 @@ if DO_DIAGNOSTIC:
     fout = 'diagnostic_fabtype%i.png'%(FABRIC_TYPE)
     print('Saving %s'%(fout))
     plt.savefig(fout, dpi=300)
+    
+    
+    #--------------------
+    
+    if DO_DIAGNOSTIC:
+        
+        delta_dP_HH        = np.abs(dP_HH - dP_HH_trunc)
+        delta_dP_HH_alphaX = np.abs(dP_HH_alphaX - dP_HH_trunc_alphaX)
+        
+        for p in [50,75,90,95,99]:
+            print('percentile(dP_HH - dP_HH_trunc, %i) = %.4f (%.4f for alpha=%i)'%(p, np.percentile(delta_dP_HH[:], p), \
+                                                                                   np.percentile(delta_dP_HH_alphaX[:], p), np.rad2deg(alphaX)))

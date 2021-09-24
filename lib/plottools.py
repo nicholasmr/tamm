@@ -35,7 +35,7 @@ def discretize_ODF(nlm, lm, latres=60):
     
     return (F, lon,lat)
 
-def plot_ODF(nlm, lm, ax=None, cmap='Greys', cblabel='', lvls = np.linspace(0.0,0.5,6), tickintvl=4):
+def plot_ODF(nlm, lm, ax=None, cmap='Greys', cblabel='$\psi$', lvls = np.linspace(0.0,0.5,6), tickintvl=4):
     
     pltshow = (ax is None)
     
@@ -67,13 +67,13 @@ def plot_ODF(nlm, lm, ax=None, cmap='Greys', cblabel='', lvls = np.linspace(0.0,
 
 ### --------------------------------
 
-def plot_returns(z, returns, a2, eigvals, vminmax=15):
+def plot_returns(z, returns, a2, eigvals, vminmax=15, I0=1):
     
     Pm_HH,Pm_HV, dP_HH,dP_HV, c_HHVV, E_HH,E_HV = returns
 
     zkm = 1e-3 * z
     frameon = 1 # Frame on subplot labels?
-    I0 = 1 # Subsurface layer index (if =1 then skip surface reflection in results)
+    #I0 = 1 # Layer index of first layer to plot (if I0=1 then skip surface reflection in results)
     
     #--------------------    
     
@@ -84,13 +84,6 @@ def plot_returns(z, returns, a2, eigvals, vminmax=15):
     prj = ccrs.Orthographic(rot, 90-inclination)
     geo = ccrs.Geodetic()
 
-    IaxODF = [0,1,2]
-    IplotODF = [1, int(len(z)/2)-1, -1] # time steps to plot ODF for
-
-    nlm = np.zeros((len(IplotODF),6))
-    for I,ii in enumerate(IplotODF):
-        nlm[I,:], lm = c2_to_nlm(a2[ii,:,:]) 
-
     #--------------------
 
     scale = 0.35
@@ -100,7 +93,7 @@ def plot_returns(z, returns, a2, eigvals, vminmax=15):
     gs_master.update(top=0.965, bottom=0.11, left=-0.0175, right=1-0.02, wspace=0.065)
     
     gs = gridspec.GridSpecFromSubplotSpec(3, 1, subplot_spec=gs_master[0], hspace=0.70)
-    ax_ODFs = [fig.add_subplot(gs[ii, 0], projection=prj) for ii in IaxODF]
+    ax_ODFs = [fig.add_subplot(gs[ii, 0], projection=prj) for ii in np.arange(3)]
        
     k = 0.9
     gs = gridspec.GridSpecFromSubplotSpec(1, 5, subplot_spec=gs_master[1], wspace=0.17, hspace=0.95, width_ratios=[k,k,1,1,1])
@@ -115,8 +108,11 @@ def plot_returns(z, returns, a2, eigvals, vminmax=15):
     
     #--------------------
     
-    plot_ODFs(ax_ODFs, IplotODF, nlm, lm, zkm, geo, rot0)
-    
+    IplotODF = [1, int(len(z)/2)-1, -1] # Plot ODF at these 3 time steps
+    nlm = np.zeros((3,6), dtype=np.complex128)
+    for ii in np.arange(3): nlm[ii,:], lm = c2_to_nlm(a2[IplotODF[ii],:,:]) 
+    plot_ODFs(ax_ODFs, nlm, lm, zkm[IplotODF], geo, rot0)
+        
     #--------------------
     
     dzhalf = -np.abs(zkm[0]-zkm[1])/2
@@ -129,7 +125,7 @@ def plot_returns(z, returns, a2, eigvals, vminmax=15):
     
     da, daminor = 1, 0.1
     ax_eig.set_yticks([0,-1,-2])
-    ax_eig.set_yticks(np.flipud(-np.arange(zkm[I0],3,daminor)), minor=True)
+    ax_eig.set_yticks(np.arange(zkm[-1],zkm[I0],daminor), minor=True)
     ax_eig.set_ylim([zkm[-1],zkm[I0]])
     ax_eig.set_ylabel(r'z ($\SI{}{\kilo\metre}$)', fontsize=FS)
        
@@ -143,7 +139,7 @@ def plot_returns(z, returns, a2, eigvals, vminmax=15):
     
     hleg = ax_Pm.legend(loc=1, bbox_to_anchor=(1.125,1), **legkwargs)
     hleg.get_frame().set_linewidth(0.7);        
-    setupAxis(ax_Pm, (20, 10), (-150,10), r'$\overline{P}_{jk}$ (dB)', r'{\bf e}', spframe=frameon)
+    setupAxis(ax_Pm, (20, 10), (-200,10), r'$\overline{P}_{jk}$ (dB)', r'{\bf e}', spframe=frameon)
     plt.setp(ax_Pm.get_yticklabels(), visible=False)   
     setcb(ax_Pm, 0, phantom=True)
     
@@ -217,12 +213,12 @@ def setcb(ax, h, ticks=[], xlbl='', phantom=False):
         cax.set_axis_off()
 
 
-def plot_ODFs(ax_ODFs, Iplot, nlm_list, lm, zkm, geo, rot0, ODFsymb=r'\psi', panelno='a'):
+def plot_ODFs(ax_ODFs, nlm, lm, zkm, geo, rot0, ODFsymb=r'\psi', panelno='a'):
     
     for ii in np.arange(len(ax_ODFs)):
         
         ax = ax_ODFs[ii]
-        plot_ODF(nlm_list[ii,:], lm, ax=ax, cblabel=r'$%s(\SI{%1.0f}{\kilo\metre})/N$'%(ODFsymb, zkm[Iplot[ii]]))
+        plot_ODF(nlm[ii,:], lm, ax=ax, cblabel=r'$%s(\SI{%1.0f}{\kilo\metre})/N$'%(ODFsymb, zkm[ii]))
         
         if ii == 0:
             colorxi = '#a50f15'

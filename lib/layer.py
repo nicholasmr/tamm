@@ -37,14 +37,13 @@ class Layer(Layer_PPJ):
         
         # Fabric frame 
         self.nlm_0   = nlm # Save copy
-        self.n2m_0   = np.divide(nlm[1:6], nlm[0]) # normalized l=2 coefs: [n_2^-2/n_0^0, n_2^-1/n_0^0, ..., n_2^2/n_0^0]
-        self.ccavg_0 = nlm_to_c2(nlm) # <c^2> in fabric frame
+        self.ccavg_0 = nlm_to_c2(self.nlm_0) # <c^2> in fabric frame
         
         # Measurement frame
         self.beta = beta
-        rotmat = np.diag([np.exp(+1j*m*beta) for m in np.arange(-2,2+1)])
-        self.n2m = np.matmul(rotmat, self.n2m_0) 
-        self.ccavg = nlm_to_c2(self.n2m) # <c^2> in measurement frame
+        Qz = np.diag([np.exp(+1j*m*self.beta) for m in [0, -2,-1,0,+1,+2]]) # Rotation matrix for rotations about the vertical z-axis.
+        self.nlm = np.matmul(Qz, self.nlm_0) 
+        self.ccavg = nlm_to_c2(self.nlm) # <c^2> in measurement frame
         
         # Calculate permitivity tensor and (transfer) matrices
         self.epsilon = self.get_epsavg(self.ccavg)  
@@ -127,12 +126,8 @@ class Layer(Layer_PPJ):
 
 def nlm_to_c2(nlm):
     
-    if len(nlm) == 5: # Normalized n2m was passed
-        n22m,n21m,n20,n21p,n22p = nlm # Assumes already normalized coefs: n22m/n00, n21m/n00, ...
-        
-    else: # Full nlm was passed
-        nlm = np.divide(nlm, nlm[0]) # Assumes coefs are NOT normalized
-        n00, n22m,n21m,n20,n21p,n22p, *_ = nlm
+    nlm = np.divide(nlm, nlm[0]) # normalized coefficients [n_2^-2/n_0^0, n_2^-1/n_0^0, ..., n_2^2/n_0^0]
+    n00, n22m,n21m,n20,n21p,n22p, *_ = nlm
     
     xi,yi,zi = 0,1,2 # indices
     c2ten = np.zeros((3,3), dtype=np.complex128)
@@ -172,7 +167,7 @@ def c2_to_nlm(c2, n00=1/np.sqrt(4*np.pi)):
     return (nlm, lm)
 
 
-def eigenframe(ccavg):
+def eigenbasis(ccavg):
     
     ai, vi = lag.eig(ccavg)
     I = ai.argsort()[::-1]   
