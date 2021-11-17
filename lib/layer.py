@@ -153,6 +153,10 @@ def nlm_to_c2(nlm):
 
 def c2_to_nlm(c2, n00=1/np.sqrt(4*np.pi)):
     
+    # <c^2> is by definition normalized (trace=1) and does therefore not contain information about the n00.
+    # If nlm is to be reconstructed, n00 must be passed. 
+    # If n00 was not passed, then assume N = sqrt(4*pi)*n00 = 1 (total number of grains is normalized).
+    
     xi,yi,zi = 0,1,2 # indices
     
     M = (c2-np.eye(3)/3)/np.sqrt(2/15) # remove isotropic part and re-scale
@@ -161,7 +165,7 @@ def c2_to_nlm(c2, n00=1/np.sqrt(4*np.pi)):
     n21p = -M[xi,zi] + 1j*M[yi,zi]
     n22p = M[xi,xi]+M[zi,zi]/2 - 1j*M[xi,yi]
 
-    nlm = n00*np.array([1, np.conj(n22p), -np.conj(n21p), n20, n21p, n22p])
+    nlm = n00*np.array([1.0, np.conj(n22p), -np.conj(n21p), n20, n21p, n22p], dtype=np.complex128)
     lm  = np.array([(0,0), (2,-2),(2,-1),(2,0),(2,1),(2,2)]).T 
     
     return (nlm, lm)
@@ -175,3 +179,4 @@ def eigenbasis(ccavg):
     e1, e2, e3 = vi[:,I[0]], vi[:,I[1]], vi[:,I[2]]
     
     return (eigvals, e1, e2, e3)
+    

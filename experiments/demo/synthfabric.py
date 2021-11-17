@@ -9,26 +9,17 @@ import scipy.special as sp
 
 sys.path.insert(0, '../../lib')
 
+from plottools import *
 from specfabpy import specfabpy as sf # requires the spectral fabric module to be compiled!
+
+# For plotting parcel geometry
+from mpl_toolkits.mplot3d import Axes3D
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+from matplotlib import patches
 
 s2yr   = 3.16887646e-8
 yr2s   = 31556926    
 yr2kyr = 1e-3 
-
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-from matplotlib import rcParams, rc, patches
-import matplotlib.ticker as mticker
-from matplotlib.offsetbox import AnchoredText
-import matplotlib.gridspec as gridspec
-from mpl_toolkits.axes_grid1 import make_axes_locatable
-import cartopy.crs as ccrs
-
-FS = 12
-rc('font',**{'family':'serif','sans-serif':['Times'],'size':FS})
-rc('text', usetex=True)
-rcParams['text.latex.preamble'] = r'\usepackage{amsmath} \usepackage{amssymb} \usepackage{physics} \usepackage{txfonts} \usepackage{siunitx}'
 
 class PureShear():
 
@@ -74,40 +65,6 @@ class SimpleShear():
     def D(self): return 0.5 * (self.ugrad() + self.ugrad().T) 
     def W(self): return 0.5 * (self.ugrad() - self.ugrad().T) 
 
-
-def plot_ODF(ax, nlm, lm, geo=None, rot0=0, cmap='Greys', tickintvl=2, cblbl=r'$\psi(\theta,\phi)/N$', title=''):
-    
-    F, lon,lat = discretize_fabric(nlm, lm)
-    lvls = np.linspace(0.1,0.5,5) # Contour lvls
-    hdistr = ax.contourf(np.rad2deg(lon), np.rad2deg(lat), F, transform=ccrs.PlateCarree(), levels=lvls, extend='both', cmap=cmap)
-    kwargs_gridlines = {'ylocs':np.arange(-90,90+30,30), 'xlocs':np.arange(0,360+45,45), 'linewidth':0.5, 'color':'black', 'alpha':0.25, 'linestyle':'-'}
-    gl = ax.gridlines(crs=ccrs.PlateCarree(), **kwargs_gridlines)
-    gl.xlocator = mticker.FixedLocator(np.array([-135, -90, -45, 0, 90, 45, 135, 180]))
-    cb1 = plt.colorbar(hdistr, ax=ax, fraction=0.065, aspect=10,  orientation='vertical', pad=0.1, ticks=lvls[::tickintvl])   
-    cb1.set_label(cblbl)
-    cb1.ax.yaxis.set_ticks(lvls, minor=True)
-    ax.set_title(title, fontsize=FS)
-    
-    if geo is not None:
-        ax.plot([0],[90],'k.', transform=geo)
-        #ax.plot([0],[0],'kx', transform=geo)
-        ax.plot([rot0],[0],'k.', transform=geo)
-        ax.text(rot0-80, 70, r'$\vu{z}$', horizontalalignment='left', transform=geo)
-        ax.text(rot0-18, -8, r'$\vu{y}$', horizontalalignment='left', transform=geo)
-    
-    return hdistr
-
-def discretize_fabric(nlm, lm, latres=50):
-
-    theta = np.linspace(0,   np.pi,   latres) # CO-LAT 
-    phi   = np.linspace(0, 2*np.pi, 2*latres) # LON
-    phi, theta = np.meshgrid(phi, theta) # gridded 
-    lon, colat = phi, theta
-    lat = np.pi/2-colat
-    _,nlm_len = lm.shape
-    F = np.real(np.sum([ nlm[ii]*sp.sph_harm(lm[1][ii], lm[0][ii], phi,theta) for ii in np.arange(nlm_len) ], axis=0))
-    
-    return (F, lon,lat)
 
 #-------------------
 # SynthFab
@@ -197,8 +154,29 @@ class SyntheticFabric():
        
         return
     
-    ####################################
-
+    # This is slightly different from that in "plottools.py" --- it is adapted for the synthfabric plot window.
+    def plot_ODF(self, ax, nlm, lm, geo=None, rot0=0, cmap='Greys', tickintvl=2, cblbl=r'$\psi(\theta,\phi)/N$', title=''):
+        
+        F, lon,lat = discretize_ODF(nlm, lm)
+        lvls = np.linspace(0.1,0.5,5) # Contour lvls
+        hdistr = ax.contourf(np.rad2deg(lon), np.rad2deg(lat), F, transform=ccrs.PlateCarree(), levels=lvls, extend='both', cmap=cmap)
+        kwargs_gridlines = {'ylocs':np.arange(-90,90+30,30), 'xlocs':np.arange(0,360+45,45), 'linewidth':0.5, 'color':'black', 'alpha':0.25, 'linestyle':'-'}
+        gl = ax.gridlines(crs=ccrs.PlateCarree(), **kwargs_gridlines)
+        gl.xlocator = mticker.FixedLocator(np.array([-135, -90, -45, 0, 90, 45, 135, 180]))
+        cb1 = plt.colorbar(hdistr, ax=ax, fraction=0.065, aspect=10,  orientation='vertical', pad=0.1, ticks=lvls[::tickintvl])   
+        cb1.set_label(cblbl)
+        cb1.ax.yaxis.set_ticks(lvls, minor=True)
+        ax.set_title(title, fontsize=FS)
+        
+        if geo is not None:
+            ax.plot([0],[90],'k.', transform=geo)
+            #ax.plot([0],[0],'kx', transform=geo)
+            ax.plot([rot0],[0],'k.', transform=geo)
+            ax.text(rot0-80, 70, r'$\vu{z}$', horizontalalignment='left', transform=geo)
+            ax.text(rot0-18, -8, r'$\vu{y}$', horizontalalignment='left', transform=geo)
+        
+        return hdistr
+    
     def makeProfile(self, deformExpr1, deformExpr2, dt=10, t_end=1000, crossover=[0.5,0.7], plot=True):
     
         dt    *= yr2s
@@ -350,9 +328,9 @@ class SyntheticFabric():
             self.plot_parcel(axParcel[1], xyz0[0], dzx[0],dzy[0],dyx[0], color=cr)
             self.plot_parcel(axParcel[3], xyz0[1], dzx[1],dzy[1],dyx[1], color=cb)
 
-            plot_ODF(axODF[0], self.nlm[N0,:], self.lm, cmap='Reds',   geo=geo, rot0=rot0, title=r'$z=\SI{%1.1f}{\kilo\metre}$'%(zkm[N0]))        
-            plot_ODF(axODF[1], self.nlm[N1,:], self.lm, cmap='Greens', geo=geo, rot0=rot0, title=r'$z=\SI{%1.1f}{\kilo\metre}$'%(zkm[N1]))        
-            plot_ODF(axODF[2], self.nlm[-1,:], self.lm, cmap='Blues',  geo=geo, rot0=rot0, title=r'$z=\SI{%1.1f}{\kilo\metre}$'%(zkm[-1]))        
+            self.plot_ODF(axODF[0], self.nlm[N0,:], self.lm, cmap='Reds',   geo=geo, rot0=rot0, title=r'$z=\SI{%1.1f}{\kilo\metre}$'%(zkm[N0]))        
+            self.plot_ODF(axODF[1], self.nlm[N1,:], self.lm, cmap='Greens', geo=geo, rot0=rot0, title=r'$z=\SI{%1.1f}{\kilo\metre}$'%(zkm[N1]))        
+            self.plot_ODF(axODF[2], self.nlm[-1,:], self.lm, cmap='Blues',  geo=geo, rot0=rot0, title=r'$z=\SI{%1.1f}{\kilo\metre}$'%(zkm[-1]))        
         
         if 0: 
             fout = 'test.png'
@@ -361,10 +339,10 @@ class SyntheticFabric():
 
         plt.show()           
     
+        return (self.nlm, self.lm, self.z)
     
-        return (self.nlm, self.z)
-    
-    
+### DEBUG
+
 if 0:    
     synfab = SyntheticFabric(N=100)
     

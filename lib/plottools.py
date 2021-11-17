@@ -21,53 +21,28 @@ rc('font',**{'family':'serif','sans-serif':['Times'],'size':FS})
 rc('text', usetex=True)
 rcParams['text.latex.preamble'] = r'\usepackage{amsmath} \usepackage{amssymb} \usepackage{physics} \usepackage{txfonts} \usepackage{siunitx}'
 
-def discretize_ODF(nlm, lm, latres=60):
+# Default ODF plotting params
+lvls_default      = np.linspace(0.0,0.5,6)
+tickintvl_default = 5
 
-    #latres = 60 # latitude resolution on S^2        
-    theta = np.linspace(0,   np.pi,   latres) # CO-LAT 
-    phi   = np.linspace(0, 2*np.pi, 2*latres) # LON
-    phi, theta = np.meshgrid(phi, theta) # gridded 
-    lon, colat = phi, theta
-    lat = np.pi/2-colat
-    
-    _,nlm_len = lm.shape
-    F = np.real(np.sum([ nlm[ii]*sp.sph_harm(lm[1][ii], lm[0][ii], phi,theta) for ii in np.arange(nlm_len) ], axis=0))
-    
-    return (F, lon,lat)
 
-def plot_ODF(nlm, lm, ax=None, cmap='Greys', cblabel='$\psi$', lvls = np.linspace(0.0,0.5,6), tickintvl=4):
-    
-    pltshow = (ax is None)
-    
-    if ax is None:
-        size = 1.5
-        plt.figure(figsize=(size,size))
-        inclination = 45 # view angle
-        rot0 = -90
-        rot = -55 + rot0 # view angle
-        prj = ccrs.Orthographic(rot, 90-inclination)
-        geo = ccrs.Geodetic()
-        ax = plt.subplot(projection=prj)
-        ax.set_global()
-    
-    F, lon,lat = discretize_ODF(nlm, lm)
-    hdistr = ax.contourf(np.rad2deg(lon), np.rad2deg(lat), F, transform=ccrs.PlateCarree(), levels=lvls, extend='max', cmap=cmap)
+def plot_returns(z, returns, a2, eigvals, vminmax=15, I0=1, nlm_true=None, lm_true=None, lvls=lvls_default, tickintvl=tickintvl_default):
 
-    kwargs_gridlines = {'ylocs':np.arange(-90,90+30,30), 'xlocs':np.arange(0,360+45,45), 'linewidth':0.5, 'color':'black', 'alpha':0.25, 'linestyle':'-'}
-    gl = ax.gridlines(crs=ccrs.PlateCarree(), **kwargs_gridlines)
-    gl.xlocator = mticker.FixedLocator(np.array([-135, -90, -45, 0, 90, 45, 135, 180]))
-
-    cb1 = plt.colorbar(hdistr, ax=ax, fraction=0.075, aspect=9,  orientation='horizontal', pad=0.1, ticks=lvls[::tickintvl])   
-    cb1.set_label(cblabel)
-    cb1.ax.xaxis.set_ticks(lvls, minor=True)
-    
-    if pltshow: plt.show()
-    
-    return hdistr
-
-### --------------------------------
-
-def plot_returns(z, returns, a2, eigvals, vminmax=15, I0=1):
+    """
+        Inputs:
+        -------
+                
+        z:          Distance from surface
+        returns:    (Pm_HH,Pm_HV, dP_HH,dP_HV, c_HHVV, E_HH,E_HV)
+        a2:         Second-order structure tensor
+        eigvals:    Eigenvalues
+        vminmax:    Colorbar min/max range for delta(P_ij) plots
+        I0:         First layer to plot (0=sfc)
+        nlm_true:   For plotting, use these ODF harmonic coefs instead of determining them from a2 (which contains only n_2^m modes).
+        lm_true:    lm list for nlm_true
+        lvls:       Contour levels for plotting ODFs
+        tickintvl:  Colorbar tick label interval for plotting ODFs
+    """    
     
     Pm_HH,Pm_HV, dP_HH,dP_HV, c_HHVV, E_HH,E_HV = returns
 
@@ -109,9 +84,13 @@ def plot_returns(z, returns, a2, eigvals, vminmax=15, I0=1):
     #--------------------
     
     IplotODF = [1, int(len(z)/2)-1, -1] # Plot ODF at these 3 time steps
-    nlm = np.zeros((3,6), dtype=np.complex128)
-    for ii in np.arange(3): nlm[ii,:], lm = c2_to_nlm(a2[IplotODF[ii],:,:]) 
-    plot_ODFs(ax_ODFs, nlm, lm, zkm[IplotODF], geo, rot0)
+    if nlm_true is None:
+        nlm = np.zeros((3,6), dtype=np.complex128)
+        for ii in np.arange(3): nlm[ii,:], lm = c2_to_nlm(a2[IplotODF[ii],:,:]) 
+    else:
+        nlm = np.zeros((3,len(nlm_true[0,:])), dtype=np.complex128)
+        for ii in np.arange(3): nlm[ii,:], lm = nlm_true[IplotODF[ii],:], lm_true
+    plot_ODFs(ax_ODFs, nlm, lm, zkm[IplotODF], geo, rot0, lvls=lvls, tickintvl=tickintvl)
         
     #--------------------
     
@@ -170,6 +149,74 @@ def plot_returns(z, returns, a2, eigvals, vminmax=15, I0=1):
     return (plt, ax_ODFs, ax_eig, ax_Pm, ax_dP_HH, ax_dP_HV, ax_c_HHVV, IplotODF, prj,geo,rot0)
 
 
+def discretize_ODF(nlm, lm, latres=60):
+
+    #latres = 60 # latitude resolution on S^2        
+    theta = np.linspace(0,   np.pi,   latres) # CO-LAT 
+    phi   = np.linspace(0, 2*np.pi, 2*latres) # LON
+    phi, theta = np.meshgrid(phi, theta) # gridded 
+    lon, colat = phi, theta
+    lat = np.pi/2-colat
+    
+    _,nlm_len = lm.shape
+    F = np.real(np.sum([ nlm[ii]*sp.sph_harm(lm[1][ii], lm[0][ii], phi,theta) for ii in np.arange(nlm_len) ], axis=0))
+    
+    return (F, lon,lat)
+
+
+def plot_ODF(nlm, lm, ax=None, cmap='Greys', cblabel='$\psi$', lvls=lvls_default, tickintvl=tickintvl_default):
+    
+    pltshow = (ax is None)
+    
+    if ax is None:
+        size = 1.5
+        plt.figure(figsize=(size,size))
+        inclination = 45 # view angle
+        rot0 = -90
+        rot = -55 + rot0 # view angle
+        prj = ccrs.Orthographic(rot, 90-inclination)
+        geo = ccrs.Geodetic()
+        ax = plt.subplot(projection=prj)
+        ax.set_global()
+    
+    F, lon,lat = discretize_ODF(nlm, lm)
+    hdistr = ax.contourf(np.rad2deg(lon), np.rad2deg(lat), F, transform=ccrs.PlateCarree(), levels=lvls, extend=('max' if lvls[0]==0.0 else 'both'), cmap=cmap)
+
+    kwargs_gridlines = {'ylocs':np.arange(-90,90+30,30), 'xlocs':np.arange(0,360+45,45), 'linewidth':0.5, 'color':'black', 'alpha':0.25, 'linestyle':'-'}
+    gl = ax.gridlines(crs=ccrs.PlateCarree(), **kwargs_gridlines)
+    gl.xlocator = mticker.FixedLocator(np.array([-135, -90, -45, 0, 90, 45, 135, 180]))
+
+    cb1 = plt.colorbar(hdistr, ax=ax, fraction=0.075, aspect=9,  orientation='horizontal', pad=0.1, ticks=lvls[::tickintvl])   
+    cb1.set_label(cblabel)
+    cb1.ax.xaxis.set_ticks(lvls, minor=True)
+    
+    if pltshow: plt.show()
+    
+    return hdistr
+
+
+def plot_ODFs(ax_ODFs, nlm, lm, zkm, geo, rot0, ODFsymb=r'\psi', panelno='a', lvls=lvls_default, tickintvl=tickintvl_default):
+    
+    for ii in np.arange(len(ax_ODFs)):
+        
+        ax = ax_ODFs[ii]
+        plot_ODF(nlm[ii,:], lm, ax=ax, cblabel=r'$%s(\SI{%1.0f}{\kilo\metre})/N$'%(ODFsymb, zkm[ii]), lvls=lvls, tickintvl=tickintvl)
+        
+        if ii == 0:
+            colorxi = '#a50f15'
+            ax.plot([0],[90],'.',       color=colorxi, transform=geo)
+            ax.plot([rot0],[0],'.',     color=colorxi, transform=geo)
+            ax.plot([2*rot0],[0],'.',   color=colorxi, transform=geo)
+            ax.text(rot0-120, 62,   r'$\vu{z}$', color=colorxi, horizontalalignment='left', transform=geo)
+            ax.text(rot0-27, -0,    r'$\vu{y}$', color=colorxi, horizontalalignment='left', transform=geo)
+            ax.text(2*rot0+10, -8,  r'$\vu{x}$', color=colorxi, horizontalalignment='left', transform=geo)
+        
+        subplotkwargs = {'frameon':1, 'alpha':1.0, 'fontsize':FS, 'pad':0.275, }
+        writeSubplotLabel(ax,2,r'{\bf %s}'%(chr(ord(panelno)+ii)), bbox=(-0.35,1.25), **subplotkwargs)
+        
+        ax.set_global()
+
+
 def writeSubplotLabel(ax, loc, txt, frameon=True, alpha=1.0, fontsize=FS, pad=0.3, ma='none', bbox=None):
     at = AnchoredText(txt, loc=loc, prop=dict(size=fontsize), frameon=frameon, pad=pad, bbox_to_anchor=bbox, bbox_transform=ax.transAxes)
     at.patch.set_linewidth(0.7)
@@ -212,25 +259,3 @@ def setcb(ax, h, ticks=[], xlbl='', phantom=False):
     else:
         cax.set_axis_off()
 
-
-def plot_ODFs(ax_ODFs, nlm, lm, zkm, geo, rot0, ODFsymb=r'\psi', panelno='a'):
-    
-    for ii in np.arange(len(ax_ODFs)):
-        
-        ax = ax_ODFs[ii]
-        plot_ODF(nlm[ii,:], lm, ax=ax, cblabel=r'$%s(\SI{%1.0f}{\kilo\metre})/N$'%(ODFsymb, zkm[ii]))
-        
-        if ii == 0:
-            colorxi = '#a50f15'
-            ax.plot([0],[90],'.',       color=colorxi, transform=geo)
-            ax.plot([rot0],[0],'.',     color=colorxi, transform=geo)
-            ax.plot([2*rot0],[0],'.',   color=colorxi, transform=geo)
-            ax.text(rot0-120, 62,   r'$\vu{z}$', color=colorxi, horizontalalignment='left', transform=geo)
-            ax.text(rot0-27, -0,    r'$\vu{y}$', color=colorxi, horizontalalignment='left', transform=geo)
-            ax.text(2*rot0+10, -8,  r'$\vu{x}$', color=colorxi, horizontalalignment='left', transform=geo)
-        
-        subplotkwargs = {'frameon':1, 'alpha':1.0, 'fontsize':FS, 'pad':0.275, }
-        writeSubplotLabel(ax,2,r'{\bf %s}'%(chr(ord(panelno)+ii)), bbox=(-0.35,1.25), **subplotkwargs)
-        
-        ax.set_global()
-        
