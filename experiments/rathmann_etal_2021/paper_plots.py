@@ -3,14 +3,15 @@
 
 import numpy as np
 import copy, sys, os, code # code.interact(local=locals())
-sys.path.insert(0, '../../lib')
-sys.path.insert(0, '../demo')
-from specfabpy import specfabpy as sf
-from synthfabric import * # Requires specfabpy: pip3 install specfabpy
 
+sys.path.insert(0, '../../lib')
 from layer import *
 from layerstack import *
 from plottools import *
+
+sys.path.insert(0, '../demo')
+from specfabpy import specfabpy as sf
+from synthfabric import * 
 
 #---------------------
 # Config
@@ -236,10 +237,10 @@ for FABRIC_TYPE in FABRIC_TYPES:
     plt.savefig(fout, dpi=300)
 
     #--------------------
-    # Plot 1 of 2 (diagnostic*)
+    # Plot 2 of 2 (diagnostic*)
     #--------------------
 
-    PLOT_REDUCED = (FABRIC_TYPE==1) # Plot HV anomalies, too, unless the experiment is that shown in the main text (no SI).
+    PLOT_REDUCED = (FABRIC_TYPE==1) # Plot HV anomalies, too, unless the experiment is experiment 1 shown in the main text.
 
     if DO_OBLIQUE:
         
@@ -377,7 +378,7 @@ for FABRIC_TYPE in FABRIC_TYPES:
             
             # Set eigen vectors
             e = np.zeros((3,3))
-#            e[0,:],e[1,:],e[2,:], eigvals = sf.frame(nlm_list[nn,:], 'e')
+#            e[0,:],e[1,:],e[2,:], eigvals = sf.frame(nlm_list[nn,:], 'e') # debug
             e[0,:],e[1,:],e[2,:] = e1[nn,:],e2[nn,:],e3[nn,:]
         
             # Calculate structure tensors
