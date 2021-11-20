@@ -147,7 +147,7 @@ def nlm_to_c2(nlm):
     c2ten[zi,zi] = +n20term
     
     ccavg = np.eye(3)/3 + np.sqrt(2/15) * c2ten
-    
+
     return np.real(ccavg)
 
 
@@ -174,7 +174,7 @@ def c2_to_nlm(c2, n00=1/np.sqrt(4*np.pi)):
 def eigenbasis(ccavg):
     
     ai, vi = lag.eig(ccavg)
-    I = ai.argsort()[::-1]   
+    I = ai.argsort()[::-1]
     eigvals = ai[I]
     e1, e2, e3 = vi[:,I[0]], vi[:,I[1]], vi[:,I[2]]
     

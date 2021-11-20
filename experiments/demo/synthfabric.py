@@ -177,7 +177,7 @@ class SyntheticFabric():
         
         return hdistr
     
-    def makeProfile(self, deformExpr1, deformExpr2, dt=10, t_end=1000, crossover=[0.5,0.7], plot=True):
+    def make_profile(self, deformExpr1, deformExpr2, dt=10, t_end=1000, crossover=[0.5,0.7], plot=True):
     
         dt    *= yr2s
         t_end *= yr2s
@@ -337,7 +337,7 @@ class SyntheticFabric():
             print('Saving %s'%(fout))
             plt.savefig(fout,dpi=300)
 
-        plt.show()           
+        if plot: plt.show()           
     
         return (self.nlm, self.lm, self.z)
     
@@ -356,6 +356,6 @@ if 0:
     t_c = 1000
     deformExpr1 = {'plane':'zx', 't_c':t_c, 'Gamma0':0e-9}
     
-    synfab.makeProfile(deformExpr1, deformExpr2, t_end=1000, crossover=[1,1])    
+    synfab.make_profile(deformExpr1, deformExpr2, t_end=1000, crossover=[1,1])    
     
        

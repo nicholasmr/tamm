@@ -4,8 +4,9 @@
 import numpy as np
 import copy, sys, os, code # code.interact(local=locals())
 sys.path.insert(0, '../../lib')
-
+sys.path.insert(0, '../demo')
 from specfabpy import specfabpy as sf
+from synthfabric import * # Requires specfabpy: pip3 install specfabpy
 
 from layer import *
 from layerstack import *
@@ -24,12 +25,12 @@ from plottools import *
     2 = Single max., vertical+horizontal rotation
     3 = Girdle, vertical rotation
     4 = Girdle, vertical+horizontal rotation
-#    5 = Ice-stream-like (block flow in top part, transition to vertical shear near bottom).
-#    6 = Shear-margin-like (horizontal single maximum in top part, transition to vertical shear near bottom)
+    5 = Shear margin (horizontal shear in top part, vertical shear dominated by DDRX near bottom)
+    6 = Bed bump (vertical shear in top part, horizontal compression near bottom)
 """
 
-FABRIC_TYPES = [1,2,3,4]
-FABRIC_TYPES = [5]
+FABRIC_TYPES = [1,2,3,4,5,6] 
+#FABRIC_TYPES = [3,4,]
 DO_OBLIQUE   = 1 # Plot truncated profile results? ($\psi^\dagger$ profile)
 DEBUG        = 0 # If 1, then plot in lower resolution
 
@@ -54,13 +55,21 @@ freq  = 179.0e6 # Transmitted frequency from surface layer
 #mt = 'FP' # Fujita--Paren
 mt = 'GTM' # General Transfer Matrix model for glaciology (Rathmann et al., 2021)
 
+### Fabric model 
+
+L  = 16 # Trancation of ODF expansion series
+nu = 2.5e-3 # Regularization magnitude 
+        
+############################################
+        
 for FABRIC_TYPE in FABRIC_TYPES:
 
-    FABRIC_SINGLEMAX = (FABRIC_TYPE==1 or FABRIC_TYPE==2)
-    FABRIC_GIRDLE    = (FABRIC_TYPE==3 or FABRIC_TYPE==4)
+    FABRIC_SINGLEMAX   = (FABRIC_TYPE==1 or FABRIC_TYPE==2)
+    FABRIC_GIRDLE      = (FABRIC_TYPE==3 or FABRIC_TYPE==4)
+    FABRIC_FROMSPECFAB = (FABRIC_TYPE==5 or FABRIC_TYPE==6)
 
     #---------------------
-    # Setup
+    # Fabric profile
     #---------------------
 
     ### Synthetic profiles from idealized <c^2> profiles.
@@ -68,7 +77,7 @@ for FABRIC_TYPE in FABRIC_TYPES:
 
         ### Specfab
 
-        nlm_len = sf.init(4) # ODF expansion series MUST be truncated at at least L=4.
+        nlm_len = sf.init(L) 
         nlm_list = np.zeros((N_layers,nlm_len), dtype=np.complex128) # This is the list of $\psi_l^m$ coefficients (here "n" is used in place of "psi").
         nlm_list[:,0] = 1/np.sqrt(4*np.pi) # Normalized distribution
 
@@ -78,10 +87,12 @@ for FABRIC_TYPE in FABRIC_TYPES:
 
         if FABRIC_TYPE == 1 or FABRIC_TYPE == 2: 
             n20 = 0.2 * 3.0 
+            n22 = 1e-10 # Set small non-zero value that removes degeneracy (no effect on results) and allows enhancement-factor plots to be well-behaved.
             
         if FABRIC_TYPE == 3 or FABRIC_TYPE == 4: 
             n20 = 0.15 
             n22 = -3/2 * np.sqrt(2/3) * n20
+            n22 += 1e-10 # Set small non-zero value that removes degeneracy (no effect on results) and allows enhancement-factor plots to be well-behaved.
 
         # Strengthen fabric profiles with depth
         linvec = np.linspace(0.5,1, N_layers-1)
@@ -124,10 +135,21 @@ for FABRIC_TYPE in FABRIC_TYPES:
 
     ### Load fabric profiles generated externally using specfab       
     else:
-        if FABRIC_TYPE==5: fname = 'idealized_icestream.npy'
-        if FABRIC_TYPE==6: fname = 'idealized_shearmargin.npy'
-        #... load
+    
+        synfab = SyntheticFabric(H=H, N=N_layers, L=L, nu=nu) 
+
+        if FABRIC_TYPE==5:
+            # Shear-margin-like
+            mode1 = {'plane':'yx', 't_c':-150, 'Gamma0':0}
+            mode2 = {'plane':'zx', 't_c':500, 'Gamma0':1.5e-9}
+            nlm_list, lm_true, z = synfab.make_profile(mode1, mode2, dt=5, t_end=1000, crossover=[0.5,0.8], plot=False)
         
+        if FABRIC_TYPE==6: 
+            # Ice-stream-like
+            mode1 = {'plane':'zx', 't_c':100,         'Gamma0':0}
+            mode2 = {   'ax':'x',  't_c':+200, 'r':0, 'Gamma0':0}
+            nlm_list, lm_true, z = synfab.make_profile(mode1, mode2, dt=5, t_end=1000, crossover=[0.6,0.8], plot=False) 
+
     #---------------------
     # Run model
     #---------------------
@@ -168,7 +190,7 @@ for FABRIC_TYPE in FABRIC_TYPES:
 
 
     #--------------------
-    # Plot reference experiment
+    # Plot 1 of 2 (synthetic*)
     #--------------------   
             
     import matplotlib.pyplot as plt
@@ -177,14 +199,13 @@ for FABRIC_TYPE in FABRIC_TYPES:
     from matplotlib.offsetbox import AnchoredText
     import matplotlib.gridspec as gridspec
     from mpl_toolkits.axes_grid1 import make_axes_locatable
-
     import cartopy.crs as ccrs
 
     I0 = 1 # Layer index of first layer to plot (if I0=1 then skip surface reflection in results)
+    kwargs = {'nlm_true':nlm_list, 'lm_true':lm_true} if FABRIC_FROMSPECFAB else {}
+    (_, ax_ODFs, _,_,_,_,_, IplotODF, prj,geo,rot0) = plot_returns(lstack.z, returns, a2, eigvals, I0=I0, **kwargs)
 
-    (_, ax_ODFs, _,_,_,_,_, IplotODF, prj,geo,rot0) = plot_returns(lstack.z, returns, a2, eigvals, I0=I0)
-
-    # Plot relevant principal axis on first ODF plot
+    # Plot principal ODF axis
     def plot_ei(ax, vec, geo, mrk='o', lbl=False, phi_rel=0, theta_rel=-18):
         
         theta,phi = getPolarAngles(vec)
@@ -215,10 +236,10 @@ for FABRIC_TYPE in FABRIC_TYPES:
     plt.savefig(fout, dpi=300)
 
     #--------------------
-    # Plot setup
+    # Plot 1 of 2 (diagnostic*)
     #--------------------
 
-    PLOT_REDUCED = (FABRIC_TYPE==1) # Plot HV anomalies unless the main paper single max experiment.
+    PLOT_REDUCED = (FABRIC_TYPE==1) # Plot HV anomalies, too, unless the experiment is that shown in the main text (no SI).
 
     if DO_OBLIQUE:
         
@@ -267,7 +288,8 @@ for FABRIC_TYPE in FABRIC_TYPES:
         
         #--------------------
         
-        plot_ODFs(ax_ODFs, nlm_list_trunc[IplotODF,:], lm, zkm[IplotODF], geo, rot0, ODFsymb=r'\psi^\dagger')
+        plot_ODFs(ax_ODFs, nlm_list_trunc[IplotODF,:], lm_true if FABRIC_FROMSPECFAB else lm, zkm[IplotODF], geo, rot0, ODFsymb=r'\psi^\dagger')
+        
         if FABRIC_TYPE==1:  
             ei_ref = e1_trunc if FABRIC_SINGLEMAX else e3_trunc
             plot_ei(ax_ODFs[0], ei_ref[IplotODF[0],:], geo, lbl=True) 
@@ -276,7 +298,7 @@ for FABRIC_TYPE in FABRIC_TYPES:
 
         #--------------------
         
-        PLOT_COVVAR = 0 # debug, test corresponding c_HV anomaly
+        PLOT_COVVAR = 0 # DEBUG: test c_HV anomaly
         
         vmin = -0.5; vmax = -vmin; ticks = np.arange(vmin, vmax+1e-5, vmax/2)
         Z_alpha0 = dP_HH - dP_HH_trunc # test HH
@@ -347,62 +369,40 @@ for FABRIC_TYPE in FABRIC_TYPES:
         ### Calculate enhancement factors 
         
         # Note: subscripts "i,j" are "p,q" in the article text
-        
-        Eii_true  = np.zeros((N_layers,3))
-        Eii_trunc = np.zeros((N_layers,3))
 
-        Eij_true  = np.zeros((N_layers,3))
-        Eij_trunc = np.zeros((N_layers,3))
+        Eij_true  = np.zeros((N_layers,3,3))
+        Eij_trunc = np.zeros((N_layers,3,3))
         
         for nn in np.arange(N_layers)[:]:
             
-            v1,v2,v3, eigvals = sf.frame(nlm_list[nn,:], 'e')
-        
             # Set eigen vectors
             e = np.zeros((3,3))
-            e[0,:],e[1,:] = v1,np.array([-v1[2],0,v1[0]])
-            e[2,:] = np.cross(e[0,:],e[1,:])
+#            e[0,:],e[1,:],e[2,:], eigvals = sf.frame(nlm_list[nn,:], 'e')
+            e[0,:],e[1,:],e[2,:] = e1[nn,:],e2[nn,:],e3[nn,:]
         
             # Calculate structure tensors
             a2, a4, a6, a8  = sf.ai(nlm_list[nn,:])
             a2t,a4t,a6t,a8t = sf.ai(nlm_list_trunc[nn,:])
         
             # Calculate enhancement factors
-        
-            tau0 = 1 # Stress function magnitude (does not matter, cancels in division)
-        
-            # Compressive enhancements
-            for ii in np.arange(3):
-                
-                ei = e[ii,:]
-                vw  = np.tensordot(ei,ei, axes=0)
-                tau = tau0*(np.identity(3)/3 - vw) 
-                
-                Eii_true[nn,ii]  = sf.enhfac_vw(a2,a4,a6,a8,     vw,tau, Ecc,Eca,g,nprime)
-                Eii_trunc[nn,ii] = sf.enhfac_vw(a2t,a4t,a6t,a8t, vw,tau, Ecc,Eca,g,nprime)
-                
-            # Shear enhancements
-            for kk, (ii,jj) in enumerate([(0,1),(0,2),(1,2)]):
+            for kk, (ii,jj) in enumerate([(0,0),(1,1),(2,2),(0,1),(0,2),(1,2)]):
                 
                 ei = e[ii,:]
                 ej = e[jj,:]
                 vw  = np.tensordot(ei,ej, axes=0)
-                tau = tau0*(vw+vw.T)
+                tau0 = 1 # Stress function magnitude (does not matter, cancels in division)
+                tau = tau0*(np.identity(3)/3 - vw) if ii==jj else tau0*(vw+vw.T)
                 
-                Eij_true[nn,kk]  = sf.enhfac_vw(a2,a4,a6,a8,     vw,tau, Ecc,Eca,g,nprime)
-                Eij_trunc[nn,kk] = sf.enhfac_vw(a2t,a4t,a6t,a8t, vw,tau, Ecc,Eca,g,nprime)
+                Eij_true[nn,ii,jj]  = sf.enhfac_vw(a2,a4,a6,a8,     vw,tau, Ecc,Eca,g,nprime)
+                Eij_trunc[nn,ii,jj] = sf.enhfac_vw(a2t,a4t,a6t,a8t, vw,tau, Ecc,Eca,g,nprime)
             
         ### Plot enhancement factors    
             
-        pls   = ['-','--',':']
+        pls   = ['-','--',':', '-','--',':']
         c1,c2 = 'k','#b15928'
         
-        for kk in np.arange(3):
-            ii = kk
-            ax_E.plot(np.divide(Eii_trunc[:,ii],Eii_true[:,ii]), zkm[1:], ls=pls[kk], color='k', lw=lw, label=r'$%i,%i$'%(ii+1,ii+1))
-            
-        for kk, (ii,jj) in enumerate([(0,1),(0,2),(1,2)]):
-            ax_E.plot(np.divide(Eij_trunc[:,kk],Eij_true[:,kk]), zkm[1:], color='g', ls=pls[kk], lw=lw, label=r'$%i,%i$'%(ii+1,jj+1))
+        for kk, (ii,jj) in enumerate([(0,0),(1,1),(2,2),(0,1),(0,2),(1,2)]):
+            ax_E.plot(np.divide(Eij_trunc[:,ii,jj],Eij_true[:,ii,jj]), zkm[1:], color='g' if kk>=3 else 'k', ls=pls[kk], lw=lw, label=r'$%i,%i$'%(ii+1,jj+1))
         
         hleg = ax_E.legend(loc=1,  bbox_to_anchor=(1.4,1), title='$p,q=$', **legkwargs)
         hleg.get_frame().set_linewidth(0.7)

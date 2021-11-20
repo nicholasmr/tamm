@@ -8,7 +8,7 @@ import scipy.special as sp
 from layer import *
 
 import matplotlib.pyplot as plt
-from matplotlib import rcParams, rc
+from matplotlib import rcParams, rc, colors
 import matplotlib.ticker as mticker
 from matplotlib.offsetbox import AnchoredText
 import matplotlib.gridspec as gridspec
@@ -22,9 +22,8 @@ rc('text', usetex=True)
 rcParams['text.latex.preamble'] = r'\usepackage{amsmath} \usepackage{amssymb} \usepackage{physics} \usepackage{txfonts} \usepackage{siunitx}'
 
 # Default ODF plotting params
-lvls_default      = np.linspace(0.0,0.5,6)
-tickintvl_default = 5
-
+lvls_default      = np.linspace(0.0,0.4,5)
+tickintvl_default = 4
 
 def plot_returns(z, returns, a2, eigvals, vminmax=15, I0=1, nlm_true=None, lm_true=None, lvls=lvls_default, tickintvl=tickintvl_default):
 
@@ -180,8 +179,20 @@ def plot_ODF(nlm, lm, ax=None, cmap='Greys', cblabel='$\psi$', lvls=lvls_default
         ax.set_global()
     
     F, lon,lat = discretize_ODF(nlm, lm)
-    hdistr = ax.contourf(np.rad2deg(lon), np.rad2deg(lat), F, transform=ccrs.PlateCarree(), levels=lvls, extend=('max' if lvls[0]==0.0 else 'both'), cmap=cmap)
+    extend = ('max' if lvls[0]==0.0 else 'both')
+    hdistr = ax.contourf(np.rad2deg(lon), np.rad2deg(lat), F, transform=ccrs.PlateCarree(), levels=lvls, extend=extend, cmap=cmap)
 
+    # "bad" (masked) values have a seperate color (default white in contourf).
+    # ...but these should really take the lowest colorbar value.
+    cmap = hdistr.get_cmap()
+    norm = colors.Normalize(vmin=lvls[0], vmax=lvls[-1])
+    color_under = cmap(norm(lvls[0]+(lvls[1]-lvls[0])/2)) # color at midpoint in first entry of colorbar 
+    if extend=='both': 
+        cmap.set_under(color_under)
+        hdistr.set_cmap(cmap)
+    ax.set_facecolor(color_under) # "bad" (masked) values 
+
+    # Add grid lines
     kwargs_gridlines = {'ylocs':np.arange(-90,90+30,30), 'xlocs':np.arange(0,360+45,45), 'linewidth':0.5, 'color':'black', 'alpha':0.25, 'linestyle':'-'}
     gl = ax.gridlines(crs=ccrs.PlateCarree(), **kwargs_gridlines)
     gl.xlocator = mticker.FixedLocator(np.array([-135, -90, -45, 0, 90, 45, 135, 180]))
@@ -204,12 +215,13 @@ def plot_ODFs(ax_ODFs, nlm, lm, zkm, geo, rot0, ODFsymb=r'\psi', panelno='a', lv
         
         if ii == 0:
             colorxi = '#a50f15'
+            colorxilbl = 'k'
             ax.plot([0],[90],'.',       color=colorxi, transform=geo)
             ax.plot([rot0],[0],'.',     color=colorxi, transform=geo)
             ax.plot([2*rot0],[0],'.',   color=colorxi, transform=geo)
-            ax.text(rot0-120, 62,   r'$\vu{z}$', color=colorxi, horizontalalignment='left', transform=geo)
-            ax.text(rot0-27, -0,    r'$\vu{y}$', color=colorxi, horizontalalignment='left', transform=geo)
-            ax.text(2*rot0+10, -8,  r'$\vu{x}$', color=colorxi, horizontalalignment='left', transform=geo)
+            ax.text(rot0-120, 62,   r'$\vu{z}$', color=colorxilbl, horizontalalignment='left', transform=geo)
+            ax.text(rot0-27, -0,    r'$\vu{y}$', color=colorxilbl, horizontalalignment='left', transform=geo)
+            ax.text(2*rot0+10, -8,  r'$\vu{x}$', color=colorxilbl, horizontalalignment='left', transform=geo)
         
         subplotkwargs = {'frameon':1, 'alpha':1.0, 'fontsize':FS, 'pad':0.275, }
         writeSubplotLabel(ax,2,r'{\bf %s}'%(chr(ord(panelno)+ii)), bbox=(-0.35,1.25), **subplotkwargs)
