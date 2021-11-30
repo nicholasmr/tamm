@@ -14,6 +14,7 @@ from matplotlib.offsetbox import AnchoredText
 import matplotlib.gridspec as gridspec
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
+import cmasher as cmr
 import cartopy.crs as ccrs
 
 FS = 12
@@ -22,7 +23,7 @@ rc('text', usetex=True)
 rcParams['text.latex.preamble'] = r'\usepackage{amsmath} \usepackage{amssymb} \usepackage{physics} \usepackage{txfonts} \usepackage{siunitx}'
 
 # Default ODF plotting params
-lvls_default      = np.linspace(0.0,0.4,5)
+lvls_default      = np.linspace(0.0,0.4,9)
 tickintvl_default = 4
 
 def plot_returns(z, returns, a2, eigvals, vminmax=15, I0=1, nlm_true=None, lm_true=None, lvls=lvls_default, tickintvl=tickintvl_default):
@@ -163,7 +164,7 @@ def discretize_ODF(nlm, lm, latres=60):
     return (F, lon,lat)
 
 
-def plot_ODF(nlm, lm, ax=None, cmap='Greys', cblabel='$\psi$', lvls=lvls_default, tickintvl=tickintvl_default):
+def plot_ODF(nlm, lm, ax=None, cmap='Greys', cblabel='$\psi$', rot0=-40, lvls=lvls_default, tickintvl=tickintvl_default):
     
     pltshow = (ax is None)
     
@@ -171,39 +172,31 @@ def plot_ODF(nlm, lm, ax=None, cmap='Greys', cblabel='$\psi$', lvls=lvls_default
         size = 1.5
         plt.figure(figsize=(size,size))
         inclination = 45 # view angle
-        rot0 = -90
-        rot = -55 + rot0 # view angle
+        rot = rot0 -90 # view angle
         prj = ccrs.Orthographic(rot, 90-inclination)
         geo = ccrs.Geodetic()
         ax = plt.subplot(projection=prj)
         ax.set_global()
     
     F, lon,lat = discretize_ODF(nlm, lm)
-    extend = ('max' if lvls[0]==0.0 else 'both')
-    hdistr = ax.contourf(np.rad2deg(lon), np.rad2deg(lat), F, transform=ccrs.PlateCarree(), levels=lvls, extend=extend, cmap=cmap)
-
-    # "bad" (masked) values have a seperate color (default white in contourf).
-    # ...but these should really take the lowest colorbar value.
-    cmap = hdistr.get_cmap()
-    norm = colors.Normalize(vmin=lvls[0], vmax=lvls[-1])
-    color_under = cmap(norm(lvls[0]+(lvls[1]-lvls[0])/2)) # color at midpoint in first entry of colorbar 
-    if extend=='both': 
-        cmap.set_under(color_under)
-        hdistr.set_cmap(cmap)
-    ax.set_facecolor(color_under) # "bad" (masked) values 
+    F[F<0] = 0 # fix numerical/truncation errors
+    cmap = cmr.get_sub_cmap(cmap, 0.05, 1) # don't include pure white.
+    h = ax.contourf(np.rad2deg(lon), np.rad2deg(lat), F, transform=ccrs.PlateCarree(), levels=lvls, extend=('max' if lvls[0]==0.0 else 'both'), cmap=cmap, nchunk=5) # "nchunk" argument must be larger than 0 for constant-ODF (e.g. isotropy) is plotted correctly.
+    #ax.set_facecolor(color_bad) # "bad" (masked) values, default white
 
     # Add grid lines
     kwargs_gridlines = {'ylocs':np.arange(-90,90+30,30), 'xlocs':np.arange(0,360+45,45), 'linewidth':0.5, 'color':'black', 'alpha':0.25, 'linestyle':'-'}
     gl = ax.gridlines(crs=ccrs.PlateCarree(), **kwargs_gridlines)
     gl.xlocator = mticker.FixedLocator(np.array([-135, -90, -45, 0, 90, 45, 135, 180]))
 
-    cb1 = plt.colorbar(hdistr, ax=ax, fraction=0.075, aspect=9,  orientation='horizontal', pad=0.1, ticks=lvls[::tickintvl])   
+    # Colorbar
+    cb1 = plt.colorbar(h, ax=ax, fraction=0.08, aspect=9,  orientation='horizontal', pad=0.1, ticks=lvls[::tickintvl])   
     cb1.set_label(cblabel)
     cb1.ax.xaxis.set_ticks(lvls, minor=True)
     
     if pltshow: plt.show()
     
-    return hdistr
+    return h
 
 
 def plot_ODFs(ax_ODFs, nlm, lm, zkm, geo, rot0, ODFsymb=r'\psi', panelno='a', lvls=lvls_default, tickintvl=tickintvl_default):

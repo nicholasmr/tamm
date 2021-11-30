@@ -31,7 +31,7 @@ from synthfabric import *
 """
 
 FABRIC_TYPES = [1,2,3,4,5,6] 
-#FABRIC_TYPES = [3,4,]
+#FABRIC_TYPES = [1]
 DO_OBLIQUE   = 1 # Plot truncated profile results? ($\psi^\dagger$ profile)
 DEBUG        = 0 # If 1, then plot in lower resolution
 
@@ -204,7 +204,7 @@ for FABRIC_TYPE in FABRIC_TYPES:
 
     I0 = 1 # Layer index of first layer to plot (if I0=1 then skip surface reflection in results)
     kwargs = {'nlm_true':nlm_list, 'lm_true':lm_true} if FABRIC_FROMSPECFAB else {}
-    (_, ax_ODFs, _,_,_,_,_, IplotODF, prj,geo,rot0) = plot_returns(lstack.z, returns, a2, eigvals, I0=I0, **kwargs)
+    (_, ax_ODFs, _,_,_,_,_, IplotODF, prj,geo,rot0) = plot_returns(lstack.z, returns, a2, eigvals, I0=I0, tickintvl=8, **kwargs)
 
     # Plot principal ODF axis
     def plot_ei(ax, vec, geo, mrk='o', lbl=False, phi_rel=0, theta_rel=-18):
@@ -289,7 +289,7 @@ for FABRIC_TYPE in FABRIC_TYPES:
         
         #--------------------
         
-        plot_ODFs(ax_ODFs, nlm_list_trunc[IplotODF,:], lm_true if FABRIC_FROMSPECFAB else lm, zkm[IplotODF], geo, rot0, ODFsymb=r'\psi^\dagger')
+        plot_ODFs(ax_ODFs, nlm_list_trunc[IplotODF,:], lm_true if FABRIC_FROMSPECFAB else lm, zkm[IplotODF], geo, rot0, ODFsymb=r'\psi^\dagger', tickintvl=8)
         
         if FABRIC_TYPE==1:  
             ei_ref = e1_trunc if FABRIC_SINGLEMAX else e3_trunc
