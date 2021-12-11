@@ -1,10 +1,10 @@
 # Radio-wave transfer matrix model for glacier ice
-Model of electromagnetic plane-wave propagation through a column of polycrystalline ice, composed of vertically-stacked, horizontally-homogeneous layers with unconsrained permittivity tensors (orientation fabrics).
+Model of electromagnetic plane-wave propagation through a column of polycrystalline ice, composed of vertically-stacked, horizontally-homogeneous layers with unconstrained permittivity tensors (orientation fabrics).
 
 ![image](githubimg.jpg)
 
 **Documentation:**<br>
-Rathmann et al, 2021 (in prep.)
+Rathmann et al., 2021, Geophysical Research Letters.
 
 **Acknowledgements:**<br>
 Builds on work by Yeh (1980), Xu and others (2000), Passler and Paarmann (2017), Passler and others (2020), and Jeannin (2019).
