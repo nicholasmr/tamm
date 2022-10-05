@@ -11,7 +11,7 @@ from layer_PPJ import *
 
 class LayerStack:
     
-    def __init__(self, nlm, z, N_frames=100, epsa=[3.17], epsc=[3.17-0.034], sigma=[1e-5], mu=1, modeltype='GTM', VERBOSE=1): 
+    def __init__(self, nlm, z, N_frames=100, epsa=[3.17-0.034], epsc=[3.17], sigma=[1e-5], mu=1, modeltype='GTM', VERBOSE=1): 
 
         self.modeltype = modeltype # GTM (General Transfer Matrix) or FP (Fujita--Paren)
         if self.modeltype not in ['GTM','FP']: raise ValueError('Argument "modeltype" must be either "GTM" or "FP"')
