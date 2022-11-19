@@ -1,4 +1,4 @@
-# Nicholas M. Rathmann <rathmann@nbi.ku.dk>, 2021
+# Nicholas M. Rathmann <rathmann@nbi.ku.dk>, 2021-2022
 
 """
 This subclass wraps a spectral fabric formulation around the Passler and Paarmann (2017,2019) layer class implemented by M. Jeannin (2019)
@@ -22,11 +22,15 @@ class Layer(Layer_PPJ):
         self.f      = f         # Plane wave frequency 
         self.zeta   = zeta      # x-component of wave vector (dimensionless)
         
-        self.epsa  = epsa  # Complex permitivity perdendicular to c-axis
+        self.epsa  = epsa  # Complex permitivity in plane perdendicular to c-axis
         self.epsc  = epsc  # Complex permitivity parallel to c-axis
         self.sigma = sigma # Single crystal isotropic conductivity
         self.mu    = mu    # Relative permeability
         
+        # Short hands
+        self.omega = 2*np.pi*self.f     # Angular frequency of wave
+        self.q2k   = self.omega/c_const # Convert from q to k 
+                
         self.setup(nlm, beta) 
 
         
@@ -51,6 +55,8 @@ class Layer(Layer_PPJ):
         
 
     def get_epsavg(self, ccavg):
+    
+        # Bulk (grain averaged) dielectric permittivity tensor from second-order structure tensor, <c^2> 
         
         monopole   = (2*self.epsa+self.epsc)/3 * np.eye(3)
         quadrupole = (self.epsc-self.epsa) * (ccavg - np.eye(3)/3)
@@ -64,17 +70,15 @@ class Layer(Layer_PPJ):
     
     def set_matrices(self):
         
-        ### Horizontal eigenvalues 
+        # Sets matrices etc. needed to construct layer stack (LayerStack class)
+        
+        ### Horizontal eigen frame 
         
         self.ai_horiz, self.Qeig = lag.eig(self.ccavg_0[:2,:2])
         self.Qeiginv = self.Qeig.T # or lag.inv(self.Qeig)
-        self.eigang = np.arctan2(self.Qeig[1,0],self.Qeig[0,0])
+        self.eigang = np.arctan2(self.Qeig[1,0],self.Qeig[0,0]) # Horizontal rotation of fabric to get from measurement frame to eigen frame
         
         ### Setup layer matrices
-        
-        # Short hands
-        omega = 2*np.pi*self.f
-        q2k = omega/c_const       
         
         # General Transfer Matrix
         if self.modeltype == 'GTM': 
@@ -82,34 +86,38 @@ class Layer(Layer_PPJ):
             # Call parent GTM routines
             self.calculate_matrices(self.zeta)
             self.calculate_q()
-            self.ks = q2k*self.qs
+            self.ks = self.q2k*self.qs # Propagation constants (not used in GTM, used for comparing with FP model)
             self.calculate_gamma(self.zeta)
             self.calculate_transfer_matrix(self.f, self.zeta)  
             
-            # Calculate auxiliary matrices
+            # Calculate propagation and auxiliary matrices
             self.Ai_inv = exact_inv(self.Ai.copy())
-            self.Ki_inv = exact_inv(self.Ki.copy()) # np.diag( np.exp(+1j*(2*np.pi*f*self.qs[:]*self.thick)/c_const) )
-            self.Mrev = self.Ki[2:,2:]
-            self.Mfwd = self.Ki_inv[0:2,0:2]
+            self.Ki_inv = exact_inv(self.Ki.copy()) # See Layer_PPJ: diag(exp(-1j*(omega/c)*qs[:]*d)) = diag(exp(-1j*ks[:]*d)
+            self.Mfwd = self.Ki_inv[0:2,0:2] # downwards: +1j*k*d exponent
+            self.Mrev = self.Ki[2:,2:]       # upwards:   -1j*k*d exponent (Yeh/Passler sign convention)
         
         # Fujita--Paren
         if self.modeltype == 'FP': 
             
-            ai = self.ai_horiz
-            bi_horiz = self.epsa + ai*(self.epsc-self.epsa)
+            # Bulk dielectric permittivity in x,y directions
+            # Diagonal components of eqn. (4) in Fujita et al. (2006)
+            epsxy = self.epsa + self.ai_horiz*(self.epsc-self.epsa) # Horizontal components when <cc> is in eigen frame (see eqn. (2) in Rathmann et al., 2021)
             
-            k1 = np.sqrt(bi_horiz[0]*(q2k)**2 + 1j*mu0*self.sigma*omega)
-            k2 = np.sqrt(bi_horiz[1]*(q2k)**2 + 1j*mu0*self.sigma*omega)
-            k1 = -np.conj(k1) # Waves are downward propagating (without this correction the phase coherences do not match the GTM model).
-            k2 = -np.conj(k2)
-            self.ks = np.array([k1,k2, k1,k2], dtype=np.complex128)
-            self.qs = 1/q2k*self.ks
-            self.Mrev = np.diag(np.exp(1j*self.ks[[2,3]]*self.thick))
-            self.Mfwd = np.diag(np.exp(1j*self.ks[[0,1]]*self.thick))
+            # Propagation constants kx and ky in Fujita et al. (2006), eqn. (7a,7b)
+            kxy = np.sqrt(epsxy*(self.q2k)**2 + 1j*mu0*self.sigma*self.omega) 
+#            kxy = -np.conj(kxy) # debug: for changing polarity of coherence phase c_HHVV.
+            (kx,ky) = kxy # Decompose for clarity
+            self.ks = +np.array([kx,ky, kx,ky], dtype=np.complex128)
+            self.qs = 1/self.q2k*self.ks
             
-            # Rotate principal frame back to the fabric frame
-            self.Mrev = self.eig_to_meas_frame(self.Mrev)
+            # Calculate propagation matrices for layer in eigen frame
+            # "Transmission" matrix, eqn. (5) in Fujita et al. (2006)
+            self.Mfwd = np.diag( np.exp(+1j*self.ks[[0,1]]*self.thick) )
+            self.Mrev = np.diag( np.exp(+1j*self.ks[[2,3]]*self.thick) )
+            
+            # Rotate eigen frame back to the measurement frame
             self.Mfwd = self.eig_to_meas_frame(self.Mfwd)
+            self.Mrev = self.eig_to_meas_frame(self.Mrev)
 
 
     def eig_to_meas_frame(self, mat_eig_frame):

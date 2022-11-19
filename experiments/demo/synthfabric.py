@@ -72,15 +72,14 @@ class SimpleShear():
 
 class SyntheticFabric():
     
-    def __init__(self, H=2000, N=100, L=10, nu=2.5e-3): 
+    def __init__(self, H=2000, N=100, L=10): 
         
         self.H  = H # ice mass height
         self.N  = N # number of layers        
         self.L  = L # spectral truncation 
-        self.nu0 = nu # Regularization strength (calibrated for L and strain-rate)
+#        self.nu0 = nu # Regularization strength. NOT USED, new specfab version provides this automatically. 
                
-        self.nlm_len = sf.init(self.L) 
-        self.lm = sf.get_lm(self.nlm_len)
+        self.lm, self.nlm_len = sf.init(self.L) 
         
         self.nlm = np.zeros((self.N, self.nlm_len), dtype=np.complex128) 
         self.nlm[0,0] = 1/np.sqrt(4*np.pi) # init with isotropy
@@ -232,17 +231,17 @@ class SyntheticFabric():
            
             D_ = g*D[0,:,:] + (1-g)*D[1,:,:]
             W_ = g*W[0,:,:] + (1-g)*W[1,:,:]
+
+            # Lattice rotation
+            dndt = sf.dndt_LATROT(nlm_list[tt-1,:], D_, W_) 
             
             # Regularization
-            dndt = sf.nu(self.nu0, D_) * sf.dndt_reg(nlm_list[tt-1,:]) 
+            dndt += sf.dndt_REG(nlm_list[tt-1,:], D_) 
            
-            # Lattice rotation
-            dndt += sf.dndt_latrot(nlm_list[tt-1,:], D_,W_) 
-            
             # DDRX
             tau = D_ # *** assumes stress and strain-rate are co-axial *** (magnitude does not matter because decay rate is normalized)
             Gamma0 = g*deformExpr1['Gamma0'] + (1-g)*deformExpr2['Gamma0']
-            dndt += Gamma0 * sf.dndt_ddrx(nlm_list[tt-1,:], tau) 
+            dndt += Gamma0 * sf.dndt_DDRX(nlm_list[tt-1,:], tau) 
             
             nlm_list[tt,:] = nlm_list[tt-1,:] + dt * np.matmul(dndt, nlm_list[tt-1,:])
         

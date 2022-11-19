@@ -1,4 +1,4 @@
-# Nicholas M. Rathmann <rathmann@nbi.ku.dk>, 2021
+# Nicholas M. Rathmann <rathmann@nbi.ku.dk>, 2021-2022
 
 """
 This class represents a vertical stack of horizontally (x,y) homogeneous layers of anisotropic polycrystalline ice
@@ -11,7 +11,8 @@ from layer_PPJ import *
 
 class LayerStack:
     
-    def __init__(self, nlm, z, N_frames=100, epsa=[3.17], epsc=[3.17-0.034], sigma=[1e-5], mu=1, modeltype='GTM', VERBOSE=1): 
+    def __init__(self, nlm, z, N_frames=100, epsa=[3.17-0.034], epsc=[3.17], sigma=[1e-5], mu=1, modeltype='GTM', VERBOSE=1):  
+#    def __init__(self, nlm, z, N_frames=100, epsa=[3.17], epsc=[3.17-0.034], sigma=[1e-5], mu=1, modeltype='GTM', VERBOSE=1):
 
         self.modeltype = modeltype # GTM (General Transfer Matrix) or FP (Fujita--Paren)
         if self.modeltype not in ['GTM','FP']: raise ValueError('Argument "modeltype" must be either "GTM" or "FP"')
@@ -160,17 +161,18 @@ class LayerStack:
             T    = np.zeros((self.N_frames,len(laylist), 2,2), dtype=np.complex128)
             Trev = np.zeros((self.N_frames,len(laylist), 2,2), dtype=np.complex128)
             
-            # Transmission matrices = identity matrices
-            T[:,:,0,0] = 1
-            T[:,:,1,1] = 1
+            # Transmission matrices = identity matrices for all layers and frames
+            T[:,:,0,0] = 1 # x,x entry
+            T[:,:,1,1] = 1 # y,y entry
             Trev = T.copy()
             
             # Reflection matrices are based on Paren (1981) scattering
             ff = 0 # any beta frame will do (eigenvalues are not changed by rotation the frame of reference)
-            R0flat = np.array([[ (frm_layers[ff][nn].ai_horiz[ii] - frm_layers[ff][nn+1].ai_horiz[ii])*(self.epsc[nn]-self.epsa[nn]) for ii in (0,1)] for nn in laylist], dtype=np.complex128)
+            R0flat = np.array([[ \
+                            (frm_layers[ff][nn].ai_horiz[ii] - frm_layers[ff][nn+1].ai_horiz[ii])*(self.epsc[nn]-self.epsa[nn]) \
+                      for ii in (0,1)] for nn in laylist], dtype=np.complex128)
             #R0flat *= 1/0.03404121647756628 # Cal. against GTM ?
-            # ...reshape
-            R0 = np.zeros((len(laylist), 2,2), dtype=np.complex128)
+            R0 = np.zeros((len(laylist), 2,2), dtype=np.complex128) # proper shape, not flattened
             R0[:,0,0] = +R0flat[:,0]
             R0[:,1,1] = +R0flat[:,1]
             # ...construct reflection matrices for each frame by a simple rotation around the z-axis or the reference frame
@@ -240,8 +242,9 @@ class LayerStack:
         c_HHVV = np.divide(numer, denom)
         
         # phase offset: c_HHVV is defined only up to an arbitrary phase shift <=> exp[i*(phi1+const.)]*exp[-i*(phi2+const.)] = exp[i*(phi1-phi2)]
-        if self.modeltype=='GTM':
-            c_HHVV *= np.exp(1j*np.pi) 
+        if self.modeltype=='GTM': 
+#            c_HHVV *=  np.exp(-1j*np.pi)
+            c_HHVV = -np.abs(c_HHVV)*np.exp(-1j*np.angle(c_HHVV)) # @TODO go through GTM matrices to determine where the phase difference compared to FP occurs.
         
         returns = (np.squeeze(Pm_HH), np.squeeze(Pm_HV), \
                    np.squeeze(dP_HH.T), np.squeeze(dP_HV.T), \
