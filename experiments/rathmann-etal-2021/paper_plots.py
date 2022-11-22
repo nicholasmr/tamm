@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Nicholas M. Rathmann <rathmann@nbi.ku.dk>, 2021
+# Nicholas M. Rathmann <rathmann@nbi.ku.dk>, 2021-2022
 
 import numpy as np
 import copy, sys, os, code # code.interact(local=locals())
@@ -22,6 +22,7 @@ from synthfabric import *
 """
     FABRIC_TYPE:
     ------------
+    0 = Single max., vertical eigen frame (for debugging/comparing GTM and FP implementations)
     1 = Single max., vertical rotation 
     2 = Single max., vertical+horizontal rotation
     3 = Girdle, vertical rotation
@@ -30,8 +31,9 @@ from synthfabric import *
     6 = Bed bump (vertical shear in top part, horizontal compression near bottom)
 """
 
-FABRIC_TYPES = [1,2,3,4,5,6] 
-#FABRIC_TYPES = [1]
+FABRIC_TYPES = [1,2,3,4,5,6]
+#FABRIC_TYPES = [0] # debug
+
 DO_OBLIQUE   = 1 # Plot truncated profile results? ($\psi^\dagger$ profile)
 DEBUG        = 0 # If 1, then plot in lower resolution
 
@@ -51,21 +53,20 @@ alphaX = np.deg2rad(10) # Angle of incidence of obliquely sounding experiment
 E0    = 1.0e3   # Transmitted wave magnitude from surface layer
 freq  = 179.0e6 # Transmitted frequency from surface layer 
 
-### Transfer matrix model config
+### Transfer matrix model type
 
-#mt = 'FP' # Fujita--Paren
-mt = 'GTM' # General Transfer Matrix model for glaciology (Rathmann et al., 2021)
+#modeltype = 'FP'  # Fujita--Paren model
+modeltype = 'GTM' # General Transfer Matrix model (Rathmann et al., 2021)
 
 ### Fabric model 
 
-L  = 16 # Trancation of ODF expansion series
-nu = 2.5e-3 # Regularization magnitude 
+L = 12 # Trancation of ODF expansion series
         
 ############################################
         
 for FABRIC_TYPE in FABRIC_TYPES:
 
-    FABRIC_SINGLEMAX   = (FABRIC_TYPE==1 or FABRIC_TYPE==2)
+    FABRIC_SINGLEMAX   = (FABRIC_TYPE==0 or FABRIC_TYPE==1 or FABRIC_TYPE==2)
     FABRIC_GIRDLE      = (FABRIC_TYPE==3 or FABRIC_TYPE==4)
     FABRIC_FROMSPECFAB = (FABRIC_TYPE==5 or FABRIC_TYPE==6)
 
@@ -78,7 +79,7 @@ for FABRIC_TYPE in FABRIC_TYPES:
 
         ### Specfab
 
-        nlm_len = sf.init(L) 
+        lm, nlm_len = sf.init(L) 
         nlm_list = np.zeros((N_layers,nlm_len), dtype=np.complex128) # This is the list of $\psi_l^m$ coefficients (here "n" is used in place of "psi").
         nlm_list[:,0] = 1/np.sqrt(4*np.pi) # Normalized distribution
 
@@ -86,17 +87,32 @@ for FABRIC_TYPE in FABRIC_TYPES:
 
         n20, n21, n22 = 0, 0, 0 # init
 
+        if FABRIC_TYPE == 0:
+            # Debug case: simple fabric profiles that allow verifying polarity of phase coherence (c_HHVV) against observations.
+            if 0:
+                # Young et al. (2021): synthetic fabric that approximates Fig. 6 in so that 
+                #   this model approx. reproduces their FP model response (Fig. 5).
+                n20 = 0.2 * 2
+                n22 = 0.10 * np.exp(1j*np.pi)
+            else:
+                # Ershadi et al. (2021): synthetic fabric that approximates Fig. 5 in so that 
+                #   this model approx. reproduces their FP model response (Fig. 5).
+                n20 = 0.2 * 2.2
+                n22 = 0.05 * np.exp(1j*np.pi/2)
+            linvec = np.linspace(0.3,1, N_layers-1)
+        
         if FABRIC_TYPE == 1 or FABRIC_TYPE == 2: 
-            n20 = 0.2 * 3.0 
+            n20 = 0.2 * 3
             n22 = 1e-10 # Set small non-zero value that removes degeneracy (no effect on results) and allows enhancement-factor plots to be well-behaved.
-            
+            linvec = np.linspace(0.5,1, N_layers-1)
+                    
         if FABRIC_TYPE == 3 or FABRIC_TYPE == 4: 
             n20 = 0.15 
             n22 = -3/2 * np.sqrt(2/3) * n20
             n22 += 1e-10 # Set small non-zero value that removes degeneracy (no effect on results) and allows enhancement-factor plots to be well-behaved.
+            linvec = np.linspace(0.5,1, N_layers-1)
 
         # Strengthen fabric profiles with depth
-        linvec = np.linspace(0.5,1, N_layers-1)
         I1 = 1 # First subsurface layer (should be 1, else for debugging)
         nlm_list[I1:,3] =  n20*linvec[(I1-1):] # n20
         nlm_list[I1:,4] = +n21*linvec[(I1-1):] # n21p
@@ -114,30 +130,32 @@ for FABRIC_TYPE in FABRIC_TYPES:
             print(nlm_list[1,:])
             print(nlm_list[-1,:])
 
-        # Rotate ODF profile toward horizontal plane
-        angles = np.deg2rad(np.linspace(0,-90, N_layers-1))
-        for nn,b in enumerate(angles,1):
-            c, s = np.cos(b), np.sin(b)
-            Qy = np.array(((c, 0, s), (0,1,0), (-s,0,c))) # Rotation matrix for rotations around y-axis.
-            c2 = nlm_to_c2(nlm_list[nn,:]) 
-            c2_rot = np.matmul(np.matmul(Qy, c2), Qy.T)
-            nlm_list[nn,:6], lm_list = c2_to_nlm(c2_rot) # Set rotated ODF spectral coefs
-
-        # Rotate aditionally the ODF profile in the horizontal plane with depth
-        if FABRIC_TYPE == 2 or FABRIC_TYPE == 4: 
-            angles = np.deg2rad(np.linspace(0,90, N_layers-1))
-            nlm_ref = nlm_list[-1,:].copy()
+        if FABRIC_TYPE > 0: 
+            
+            # Rotate ODF profile toward horizontal plane
+            angles = np.deg2rad(np.linspace(0,-90, N_layers-1))
             for nn,b in enumerate(angles,1):
                 c, s = np.cos(b), np.sin(b)
-                Qz = np.array(((c, -s, 0), (s,c,0), (0,0,1))) # Rotation matrix for rotations around z-axis.
+                Qy = np.array(((c, 0, s), (0,1,0), (-s,0,c))) # Rotation matrix for rotations around y-axis.
                 c2 = nlm_to_c2(nlm_list[nn,:]) 
-                c2_rot = np.matmul(np.matmul(Qz, c2), Qz.T)
+                c2_rot = np.matmul(np.matmul(Qy, c2), Qy.T)
                 nlm_list[nn,:6], lm_list = c2_to_nlm(c2_rot) # Set rotated ODF spectral coefs
+
+            # Rotate additionally the ODF profile in the horizontal plane with depth
+            if FABRIC_TYPE == 2 or FABRIC_TYPE == 4: 
+                angles = np.deg2rad(np.linspace(0,90, N_layers-1))
+                nlm_ref = nlm_list[-1,:].copy()
+                for nn,b in enumerate(angles,1):
+                    c, s = np.cos(b), np.sin(b)
+                    Qz = np.array(((c, -s, 0), (s,c,0), (0,0,1))) # Rotation matrix for rotations around z-axis.
+                    c2 = nlm_to_c2(nlm_list[nn,:]) 
+                    c2_rot = np.matmul(np.matmul(Qz, c2), Qz.T)
+                    nlm_list[nn,:6], lm_list = c2_to_nlm(c2_rot) # Set rotated ODF spectral coefs
 
     ### Load fabric profiles generated externally using specfab       
     else:
     
-        synfab = SyntheticFabric(H=H, N=N_layers, L=L, nu=nu) 
+        synfab = SyntheticFabric(H=H, N=N_layers, L=L) 
 
         if FABRIC_TYPE==5:
             # Shear-margin-like
@@ -157,7 +175,7 @@ for FABRIC_TYPE in FABRIC_TYPES:
 
     ### Reference profile model
         
-    lstack = LayerStack(nlm_list, z, N_frames=N_frames, modeltype=mt) # init layer stack
+    lstack = LayerStack(nlm_list, z, N_frames=N_frames, modeltype=modeltype) # init layer stack
     returns = lstack.get_returns(E0, f=freq, alpha=alpha) # get returns for radar config
     Pm_HH,Pm_HV, dP_HH,dP_HV, c_HHVV, E_HH,E_HV = returns # unpack
     eigvals, e1,e2,e3, a2 = lstack.get_eigenbasis() 
@@ -171,7 +189,7 @@ for FABRIC_TYPE in FABRIC_TYPES:
         nlm_list_trunc = nlm_list.copy()
         nlm_list_trunc[:,np.array([2,4])] = 0
         
-        lstack_trunc = LayerStack(nlm_list_trunc, z, N_frames=N_frames, modeltype=mt)
+        lstack_trunc = LayerStack(nlm_list_trunc, z, N_frames=N_frames, modeltype=modeltype)
         returns_trunc = lstack_trunc.get_returns(E0, f=freq, alpha=alpha)
         Pm_HH_trunc,Pm_HV_trunc, dP_HH_trunc,dP_HV_trunc, c_HHVV_trunc, E_HH_trunc,E_HV_trunc = returns_trunc
         _, e1_trunc,e2_trunc,e3_trunc, a2_trunc = lstack_trunc.get_eigenbasis()
@@ -180,12 +198,12 @@ for FABRIC_TYPE in FABRIC_TYPES:
 
     if DO_OBLIQUE:
         
-        lstack_alphaX = LayerStack(nlm_list, z, N_frames=N_frames, modeltype=mt)
+        lstack_alphaX = LayerStack(nlm_list, z, N_frames=N_frames, modeltype=modeltype)
         returns_alphaX = lstack_alphaX.get_returns(E0, f=freq, alpha=alphaX)
         _,_, dP_HH_alphaX,dP_HV_alphaX, c_HHVV_alphaX, _,_ = returns_alphaX
         
         # Truncated profile of obliquely incident model
-        lstack_trunc_alphaX = LayerStack(nlm_list_trunc, z, N_frames=N_frames, modeltype=mt)
+        lstack_trunc_alphaX = LayerStack(nlm_list_trunc, z, N_frames=N_frames, modeltype=modeltype)
         returns_trunc_alphaX = lstack_trunc_alphaX.get_returns(E0, f=freq, alpha=alphaX)
         _,_, dP_HH_trunc_alphaX,dP_HV_trunc_alphaX, c_HHVV_trunc_alphaX, _,_ = returns_trunc_alphaX
 
@@ -232,7 +250,7 @@ for FABRIC_TYPE in FABRIC_TYPES:
         plot_ei(ax_ODFs[2], ei_ref[IplotODF[2],:], geo) 
 
     # Save plot
-    fout = 'synthetic%i.png'%(FABRIC_TYPE)
+    fout = 'synthetic%i-%s.png'%(FABRIC_TYPE, modeltype)
     print('Saving %s'%(fout))
     plt.savefig(fout, dpi=300)
 
@@ -363,8 +381,8 @@ for FABRIC_TYPE in FABRIC_TYPES:
         
         # Use linear grain rheology from Rathmann and Lilien (2021)
         nprime = 1 
-        Ecc    = sf.ecc_opt_lin 
-        Eca    = sf.eca_opt_lin
+        Ecc    = sf.Ecc_opt_lin 
+        Eca    = sf.Eca_opt_lin
         g      = sf.alpha_opt_lin
         
         ### Calculate enhancement factors 
@@ -378,24 +396,18 @@ for FABRIC_TYPE in FABRIC_TYPES:
             
             # Set eigen vectors
             e = np.zeros((3,3))
-#            e[0,:],e[1,:],e[2,:], eigvals = sf.frame(nlm_list[nn,:], 'e') # debug
             e[0,:],e[1,:],e[2,:] = e1[nn,:],e2[nn,:],e3[nn,:]
-        
-            # Calculate structure tensors
-            a2, a4, a6, a8  = sf.ai(nlm_list[nn,:])
-            a2t,a4t,a6t,a8t = sf.ai(nlm_list_trunc[nn,:])
-        
+       
             # Calculate enhancement factors
             for kk, (ii,jj) in enumerate([(0,0),(1,1),(2,2),(0,1),(0,2),(1,2)]):
                 
-                ei = e[ii,:]
-                ej = e[jj,:]
+                ei,ej = e[ii,:],e[jj,:]
                 vw  = np.tensordot(ei,ej, axes=0)
                 tau0 = 1 # Stress function magnitude (does not matter, cancels in division)
                 tau = tau0*(np.identity(3)/3 - vw) if ii==jj else tau0*(vw+vw.T)
                 
-                Eij_true[nn,ii,jj]  = sf.enhfac_vw(a2,a4,a6,a8,     vw,tau, Ecc,Eca,g,nprime)
-                Eij_trunc[nn,ii,jj] = sf.enhfac_vw(a2t,a4t,a6t,a8t, vw,tau, Ecc,Eca,g,nprime)
+                Eij_true[nn,ii,jj]  = sf.Evw(nlm_list[nn,:],       vw,tau, Ecc,Eca,g,nprime)
+                Eij_trunc[nn,ii,jj] = sf.Evw(nlm_list_trunc[nn,:], vw,tau, Ecc,Eca,g,nprime)
             
         ### Plot enhancement factors    
             
@@ -421,7 +433,7 @@ for FABRIC_TYPE in FABRIC_TYPES:
         #--------------------
         
         # Save plot
-        fout = 'diagnostic%i.png'%(FABRIC_TYPE)
+        fout = 'diagnostic%i-%s.png'%(FABRIC_TYPE, modeltype)
         print('Saving %s'%(fout))
         plt.savefig(fout, dpi=300)
         

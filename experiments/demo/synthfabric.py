@@ -233,17 +233,17 @@ class SyntheticFabric():
             W_ = g*W[0,:,:] + (1-g)*W[1,:,:]
 
             # Lattice rotation
-            dndt = sf.dndt_LATROT(nlm_list[tt-1,:], D_, W_) 
+            M = sf.M_LROT(nlm_list[tt-1,:], D_, W_) 
             
             # Regularization
-            dndt += sf.dndt_REG(nlm_list[tt-1,:], D_) 
+            M += sf.M_REG(nlm_list[tt-1,:], D_) 
            
             # DDRX
             tau = D_ # *** assumes stress and strain-rate are co-axial *** (magnitude does not matter because decay rate is normalized)
             Gamma0 = g*deformExpr1['Gamma0'] + (1-g)*deformExpr2['Gamma0']
-            dndt += Gamma0 * sf.dndt_DDRX(nlm_list[tt-1,:], tau) 
+            M += Gamma0 * sf.M_DDRX(nlm_list[tt-1,:], tau) 
             
-            nlm_list[tt,:] = nlm_list[tt-1,:] + dt * np.matmul(dndt, nlm_list[tt-1,:])
+            nlm_list[tt,:] = nlm_list[tt-1,:] + dt * np.matmul(M, nlm_list[tt-1,:])
         
         depth = np.linspace(0, self.H, Nt+1)
         (self.nlm, z_intp) = self.intp_nlm(nlm_list, depth)
