@@ -9,8 +9,7 @@ from layer import *
 from layerstack import *
 from plottools import *
 
-sys.path.insert(0, '../demo')
-from specfabpy import specfabpy as sf
+from specfabpy import specfab as sf
 from synthfabric import * 
 
 #---------------------
@@ -32,6 +31,7 @@ from synthfabric import *
 """
 
 FABRIC_TYPES = [1,2,3,4,5,6]
+FABRIC_TYPES = [5] # debug
 #FABRIC_TYPES = [0] # debug
 
 DO_OBLIQUE   = 1 # Plot truncated profile results? ($\psi^\dagger$ profile)
@@ -381,9 +381,10 @@ for FABRIC_TYPE in FABRIC_TYPES:
         
         # Use linear grain rheology from Rathmann and Lilien (2021)
         nprime = 1 
-        Ecc    = sf.Ecc_opt_lin 
-        Eca    = sf.Eca_opt_lin
-        g      = sf.alpha_opt_lin
+        Eij_grain = (1, 1e3)
+        g = 0.0125 
+        
+        grain_params = (Eij_grain,g,nprime)
         
         ### Calculate enhancement factors 
         
@@ -406,8 +407,8 @@ for FABRIC_TYPE in FABRIC_TYPES:
                 tau0 = 1 # Stress function magnitude (does not matter, cancels in division)
                 tau = tau0*(np.identity(3)/3 - vw) if ii==jj else tau0*(vw+vw.T)
                 
-                Eij_true[nn,ii,jj]  = sf.Evw(nlm_list[nn,:],       vw,tau, Ecc,Eca,g,nprime)
-                Eij_trunc[nn,ii,jj] = sf.Evw(nlm_list_trunc[nn,:], vw,tau, Ecc,Eca,g,nprime)
+                Eij_true[nn,ii,jj]  = sf.Evw_tranisotropic(nlm_list[nn,:],       ei,ej, tau, *grain_params)
+                Eij_trunc[nn,ii,jj] = sf.Evw_tranisotropic(nlm_list_trunc[nn,:], ei,ej, tau, *grain_params)
             
         ### Plot enhancement factors    
             

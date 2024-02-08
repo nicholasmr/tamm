@@ -195,13 +195,41 @@ class LayerStack:
         
         return URD
     
+    def get_U(self, frm_layers):
+    
+        U = np.zeros((self.N_frames,self.N_layers, 2,2), dtype=np.complex128) # Upward (rev) propagation
+        U[:,0,:,:] = np.eye(2) # identity for surface layer (zero propagation path)
+        U[:,-1,:,:] = np.eye(2) # identity for bottom (tranmission) layer (zero propagation path)
+        
+        laylist = self.layerlist[:-1] # Reduced layer list: can not calculate reflection from last layer since the interface matrix depends on the perm/fabric of the next (unspecified) layer
+
+        ### Construct layer/interface-wise transfer matrices
+
+        Mrev_next = np.array([ [frm_layers[ff][nn+1].Mrev for nn in laylist] for ff in self.framelist], dtype=np.complex128)
+
+        if self.modeltype == 'GTM':
+            A         = np.array([ [frm_layers[ff][nn  ].Ai     for nn in laylist] for ff in self.framelist], dtype=np.complex128)
+            A_inv     = np.array([ [frm_layers[ff][nn  ].Ai_inv for nn in laylist] for ff in self.framelist], dtype=np.complex128)
+            Anext     = np.array([ [frm_layers[ff][nn+1].Ai     for nn in laylist] for ff in self.framelist], dtype=np.complex128)
+            Anext_inv = np.array([ [frm_layers[ff][nn+1].Ai_inv for nn in laylist] for ff in self.framelist], dtype=np.complex128)
+            R, T, Trev = self.get_T_R(A,A_inv, Anext,Anext_inv)
+        else:
+            raise ValueError('Only GTM model type supported')
+            
+        ### Construct total upward and downward transfer matrices for scattering of each internal interface.
+        
+        U_mul = np.einsum('fnij,fnjk->fnik', Trev, Mrev_next)
+        for nn in self.layerlist[:-1]:
+            U[:,nn+1,:,:] = np.einsum('fij,fjk->fik', U[:,nn,:,:], U_mul[:,nn,:,:]) # U_{n}*E_{n}^{-,upward} = E_{0,Rx}^{-}
+
+        return U[:,:-1,:,:]
 
     ### RADAR RETURNS
     
     def dB(self, amp): return 20 * np.log10(amp) 
 
    
-    def get_returns(self, E0, f=179.0e6, alpha=0, nn=None):
+    def get_returns(self, E0, f=179.0e6, alpha=0, Tx_pol=([1,0],), URD='URD', nn=None):
     
         ### Construct URD matrix for total two-way propagation
         
@@ -209,12 +237,15 @@ class LayerStack:
         zeta  = np.sqrt(self.epsiso)*np.sin(alpha) # Dimensionless x-component of incident wave vector
         frm_layers = [self.get_layerstack(b, f, zeta) for b in self.beta]
         
-        URD = self.get_URD(frm_layers) 
+        if   URD == 'URD': URD = self.get_URD(frm_layers)
+        elif URD == 'U':   URD = self.get_U(frm_layers)
+        else:
+            raise ValueError('get_returns(): argument URD="%s" not understood'%(URD))
     
         ### Calculate wave returns
     
         # Tx_pol:  polarization of transmitted wave H (x'' dir), V (y'' dir)
-        Tx_pol = ([1,0],)
+#        Tx_pol = ([1,0],)
         E_Tx = np.array([np.array([E0*p[0], E0*p[1]], dtype=np.complex128) for p in Tx_pol]) # Init downard propergating wave in layer 0
         E_Rx = self.get_Rx_all(E_Tx, URD, nn=nn) # (frame, layer, Tx/Rx pair)
         
@@ -255,7 +286,7 @@ class LayerStack:
         self.frm_layers = frm_layers 
         
         return returns
-
+        
 
     def get_Rx_all(self, E_Tx_list, URD, nn=None):
 

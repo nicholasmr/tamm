@@ -8,9 +8,9 @@ from scipy import interpolate
 import scipy.special as sp
 
 sys.path.insert(0, '../../lib')
-
 from plottools import *
-from specfabpy import specfabpy as sf # requires the spectral fabric module to be compiled!
+
+from specfabpy import specfab as sf
 
 # For plotting parcel geometry
 from mpl_toolkits.mplot3d import Axes3D
@@ -233,7 +233,7 @@ class SyntheticFabric():
             W_ = g*W[0,:,:] + (1-g)*W[1,:,:]
 
             # Lattice rotation
-            M = sf.M_LROT(nlm_list[tt-1,:], D_, W_) 
+            M = sf.M_LROT(nlm_list[tt-1,:], D_, W_, +1,0) 
             
             # Regularization
             M += sf.M_REG(nlm_list[tt-1,:], D_) 
@@ -358,3 +358,4 @@ if 0:
     synfab.make_profile(deformExpr1, deformExpr2, t_end=1000, crossover=[1,1])    
     
        
+
